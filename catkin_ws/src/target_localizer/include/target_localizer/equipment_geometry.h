@@ -70,8 +70,23 @@ struct EquipmentGeometryResult {
     int left_rear_points = 0;
     int right_front_points = 0;
     int right_rear_points = 0;
-    std::string quality = "LOST";
+    std::string overall_status = "LOST";
     std::string invalid_reason = "none";
+    std::string roll_quality = "INVALID";
+    std::string pitch_quality = "INVALID";
+    std::string yaw_quality = "INVALID";
+    std::string left_front_quality = "INVALID";
+    std::string left_rear_quality = "INVALID";
+    std::string right_front_quality = "INVALID";
+    std::string right_rear_quality = "INVALID";
+    std::string roll_invalid_reason = "NO_POINTCLOUD";
+    std::string pitch_invalid_reason = "NO_POINTCLOUD";
+    std::string yaw_invalid_reason = "NO_POINTCLOUD";
+    std::string left_front_invalid_reason = "NO_POINTCLOUD";
+    std::string left_rear_invalid_reason = "NO_POINTCLOUD";
+    std::string right_front_invalid_reason = "NO_POINTCLOUD";
+    std::string right_rear_invalid_reason = "NO_POINTCLOUD";
+    std::string quality = "LOST";  // Deprecated alias for overall_status.
     double wall_direction_diff_deg = 0.0;
 };
 

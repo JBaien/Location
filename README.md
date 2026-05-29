@@ -106,6 +106,8 @@ min_valid_clearance_m: -0.2
 max_ground_plane_rmse: 0.08
 min_ground_normal_z: 0.85
 max_wall_direction_diff_deg: 8.0
+required_frame_id: base_link
+enable_tf_transform: false
 max_pointcloud_age_sec: 0.5
 distance_filter_alpha: 0.3
 max_distance_jump_m: 0.3
@@ -118,10 +120,12 @@ min_total_points: 100
 - `rear_sample_distance_m`：后测量点距离设备中心的后向距离，单位米，用于计算左后、右后距离。
 - `sample_window_x_m`：前/后测量点沿 X 方向的采样窗口宽度，单位米。例如前测量点在 2.0 m、窗口为 0.4 m 时，会取约 1.8 m 到 2.2 m 范围内的点。
 - `forward_sign`：定义设备“前方”对应的 X 轴方向。`1` 表示 +X 为前方，`-1` 表示 -X 为前方。
-- `left_sign`：定义设备“左侧”对应的 Y 轴方向。`1` 表示 +Y 为左侧，`-1` 表示 -Y 为左侧。
+- `left_sign`：旧配置兼容项。当前算法在 `base_link` 下固定使用 +Y 为左侧、-Y 为右侧，不再用该参数切换左右方向。
 - `equipment_half_width_m`：设备半宽，单位米。四角距离会从雷达坐标到侧壁距离中扣除该值，显示为设备外轮廓到侧壁的剩余距离。
 - `min_valid_clearance_m`：允许的最小有效剩余距离，单位米。轻微负值可保留用于提示接近或越界；明显低于该阈值会标记为无效。
 - `max_wall_direction_diff_deg`：左右墙 PCA 主方向最大允许夹角，超过后偏航角无效。
+- `required_frame_id`：设备状态计算要求的点云坐标系，当前部署为 `base_link`。
+- `enable_tf_transform`：是否在输入点云不是 `required_frame_id` 时尝试 TF 转换。默认关闭，frame 不匹配直接无效；开启后 TF 失败会标记 `TF_LOOKUP_FAILED`。
 - `max_pointcloud_age_sec`：输入点云最大允许延迟，超过后整体状态无效。
 - `distance_filter_alpha`：距离一阶滤波系数，越小越平滑，越大越跟手。
 - `max_distance_jump_m`：距离单帧最大允许跳变，超过后该方向距离无效。
@@ -131,7 +135,7 @@ min_total_points: 100
 
 `equipment_state_node` 订阅融合后的 `/points_raw`。该点云必须已经通过三雷达 TF 外参统一到 `base_link` 设备坐标系，默认约定为 X 向前、Y 向左、Z 向上。节点从当前点云中估算设备相对巷道/底板的姿态趋势和左右前后剩余距离，并发布 `/equipment_state`。它不是严格 IMU 姿态解算，真实控制或安全联锁应优先使用惯导，并把点云结果作为环境参考或校验。
 
-节点会检查输入点云的 `header.stamp`、`frame_id` 和点数。如果点云为空、超时，或 `frame_id` 不符合 `required_frame_id`，则 `/equipment_state` 整体标记为无效。当前部署中融合节点应输出 `frame_id=base_link`；如果后续改为其他坐标系，应先通过 TF 转换到设备坐标系再计算。
+节点会检查输入点云的 `header.stamp`、`frame_id` 和点数。如果点云为空、超时，或 `frame_id` 不符合 `required_frame_id`，则 `/equipment_state` 整体标记为无效。当前部署中融合节点应输出 `frame_id=base_link`；如果后续改为其他坐标系，可通过 `enable_tf_transform: true` 尝试 TF 转换到 `required_frame_id` 后再计算，TF 转换失败时使用 `TF_LOOKUP_FAILED`，未开启转换时使用 `FRAME_ID_INVALID`。
 
 姿态角计算：
 
@@ -143,15 +147,15 @@ min_total_points: 100
 四角距离计算：
 
 - 根据 `front_sample_distance_m` 和 `rear_sample_distance_m` 确定前、后两个 X 向采样位置。
-- 根据 `left_sign` 区分左侧和右侧，在侧向 ROI 内分别取左前、左后、右前、右后点云。
+- 在 `base_link` 坐标系中固定按 Y 轴正负区分左右：左侧取 `y > 0` 点，右侧取 `y < 0` 点；`left_sign` 仅作为旧配置保留，不再作为新逻辑的主要左右判定依据。
 - 每个采样区会按 `sample_window_x_m` 限制前后宽度，并按 `side_y_abs_min/side_y_abs_max`、`side_z_min/side_z_max` 过滤有效侧壁点。
 - 距离值取侧向距离的低分位数，默认 `distance_percentile: 0.1`，这样比直接取最小值更抗孤立噪点。
 - 输出距离会扣除 `equipment_half_width_m`，因此网页显示的是设备外轮廓到侧壁的剩余距离，不是雷达坐标原点到侧壁的距离。
 - 距离允许在 `min_valid_clearance_m` 范围内保留轻微负值，用于提示外轮廓已经接近或越界；明显异常负值会标记为无效。
-- 距离值会经过轻量时间滤波，并使用 `max_distance_jump_m` 抑制孤立帧突变；跳变过大时该方向距离无效。
+- 距离值会经过轻量时间滤波，并使用 `max_distance_jump_m` 抑制孤立帧突变；跳变过大时该方向距离无效。滤波器只使用通过 ROI、点数、清距范围和跳变检查的有效原始距离更新；无效距离不会更新滤波器，第一帧有效距离只初始化滤波器，不触发跳变拒绝。
 - 每个方向有效点数至少需要达到 `min_distance_points`，否则该方向距离无效，网页显示为空值。
-- `/equipment_state` 的整体状态不简单等于所有单项均有效。`quality` 使用 `OK`、`DEGRADED`、`INVALID`、`LOST`：输入正常且主要姿态/距离都有效为 `OK`；部分有效为 `DEGRADED`；点云存在但关键拟合失败为 `INVALID`；点云为空、超时或坐标系错误为 `LOST`。
-- `/equipment_state` 同时发布整体有效性和单项有效性，包括 `roll_valid`、`pitch_valid`、`yaw_valid`、`left_front_valid`、`left_rear_valid`、`right_front_valid`、`right_rear_valid`，并带有参与计算的点数、`quality` 状态和 `invalid_reason`。`invalid_reason` 只描述本节点输入、ROI、拟合和质量门控失败原因，不包含前端 WebSocket 或外部 TCP 通信错误。常见无效原因包括 `NO_POINTCLOUD`、`POINTCLOUD_STALE`、`FRAME_ID_INVALID`、`LOW_TOTAL_POINTS`、`LOW_GROUND_POINTS`、`HIGH_GROUND_RMSE`、`BAD_GROUND_NORMAL`、`LOW_WALL_POINTS`、`RANSAC_FAILED`、`PCA_FAILED`、`PCA_INCONSISTENT`、`LOW_DISTANCE_POINTS`、`CLEARANCE_INVALID`、`DISTANCE_JUMP_REJECTED`。
+- `/equipment_state` 的整体状态不简单等于所有单项均有效。`overall_status` 使用 `OK`、`DEGRADED`、`INVALID`、`LOST`：输入正常且主要姿态/距离都有效为 `OK`；部分有效为 `DEGRADED`；点云存在但关键拟合失败为 `INVALID`；点云为空、超时或坐标系错误为 `LOST`。旧字段 `quality` 保留为 `overall_status` 的兼容别名。
+- `/equipment_state` 同时发布整体有效性和单项有效性，包括 `roll_valid`、`pitch_valid`、`yaw_valid`、`left_front_valid`、`left_rear_valid`、`right_front_valid`、`right_rear_valid`。各单项用独立的 `*_quality` 和 `*_invalid_reason` 描述局部计算质量，整体 `invalid_reason` 只描述本节点输入、ROI、拟合和质量门控失败原因，不包含前端 WebSocket 或外部 TCP 通信错误。常见无效原因包括 `NO_POINTCLOUD`、`POINTCLOUD_STALE`、`FRAME_ID_INVALID`、`TF_LOOKUP_FAILED`、`LOW_TOTAL_POINTS`、`LOW_GROUND_POINTS`、`HIGH_GROUND_RMSE`、`BAD_GROUND_NORMAL`、`LOW_WALL_POINTS`、`RANSAC_FAILED`、`PCA_FAILED`、`PCA_INCONSISTENT`、`LOW_DISTANCE_POINTS`、`CLEARANCE_INVALID`、`DISTANCE_JUMP_REJECTED`。
 - 距离在 ROS 消息中优先使用米制字段，例如 `left_front_clearance_m`、`right_front_clearance_m`、`left_rear_clearance_m`、`right_rear_clearance_m`；现有 `*_mm` 字段仅用于兼容当前网页显示。
 - 左侧距离使用 `y > 0` 点的 `y` 作为侧向距离；右侧距离使用 `y < 0` 点的 `-y`，等价于 `abs(y)`。最终统一计算 `clearance_m = wall_distance_m - equipment_half_width_m`。
 

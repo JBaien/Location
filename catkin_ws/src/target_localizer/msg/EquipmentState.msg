@@ -37,3 +37,18 @@ uint32 point_count
 
 string quality
 string invalid_reason
+string overall_status
+string roll_quality
+string pitch_quality
+string yaw_quality
+string left_front_quality
+string left_rear_quality
+string right_front_quality
+string right_rear_quality
+string roll_invalid_reason
+string pitch_invalid_reason
+string yaw_invalid_reason
+string left_front_invalid_reason
+string left_rear_invalid_reason
+string right_front_invalid_reason
+string right_rear_invalid_reason

@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   sensor_msgs
   std_msgs
+  tf
   visualization_msgs
 )
 
@@ -43,6 +44,7 @@ catkin_package(
     roscpp
     sensor_msgs
     std_msgs
+    tf
     visualization_msgs
   DEPENDS EIGEN3 PCL
 )

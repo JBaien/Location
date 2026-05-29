@@ -37,6 +37,7 @@ hold_duration: 0.3
 # 设备姿态/四角距离估计。订阅融合后的 /points_raw，输出 /equipment_state。
 equipment_state_topic: /equipment_state
 required_frame_id: base_link
+enable_tf_transform: false
 max_pointcloud_age_sec: 0.5
 distance_filter_alpha: 0.3
 max_distance_jump_m: 0.3

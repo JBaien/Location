@@ -3,12 +3,19 @@ export interface EquipmentMetricState {
   source: string;
   quality: string;
   invalid_reason?: string;
+  overall_status?: string;
   stamp_ns: number;
   attitude: {
     valid: boolean;
     roll_valid?: boolean;
     pitch_valid?: boolean;
     yaw_valid?: boolean;
+    roll_quality?: string;
+    pitch_quality?: string;
+    yaw_quality?: string;
+    roll_invalid_reason?: string;
+    pitch_invalid_reason?: string;
+    yaw_invalid_reason?: string;
     roll_deg: number;
     pitch_deg: number;
     yaw_deg: number;
@@ -23,6 +30,14 @@ export interface EquipmentMetricState {
     left_rear_valid?: boolean;
     right_front_valid?: boolean;
     right_rear_valid?: boolean;
+    left_front_quality?: string;
+    left_rear_quality?: string;
+    right_front_quality?: string;
+    right_rear_quality?: string;
+    left_front_invalid_reason?: string;
+    left_rear_invalid_reason?: string;
+    right_front_invalid_reason?: string;
+    right_rear_invalid_reason?: string;
     left_front_clearance_m?: number;
     left_rear_clearance_m?: number;
     right_front_clearance_m?: number;

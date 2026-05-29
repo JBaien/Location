@@ -100,12 +100,19 @@ function emptyMetric(): EquipmentMetricState {
     source: 'none',
     quality: 'lost',
     invalid_reason: 'none',
+    overall_status: 'lost',
     stamp_ns: 0,
     attitude: {
       valid: false,
       roll_valid: false,
       pitch_valid: false,
       yaw_valid: false,
+      roll_quality: 'INVALID',
+      pitch_quality: 'INVALID',
+      yaw_quality: 'INVALID',
+      roll_invalid_reason: 'none',
+      pitch_invalid_reason: 'none',
+      yaw_invalid_reason: 'none',
       roll_deg: 0,
       pitch_deg: 0,
       yaw_deg: 0,
@@ -120,6 +127,14 @@ function emptyMetric(): EquipmentMetricState {
       left_rear_valid: false,
       right_front_valid: false,
       right_rear_valid: false,
+      left_front_quality: 'INVALID',
+      left_rear_quality: 'INVALID',
+      right_front_quality: 'INVALID',
+      right_rear_quality: 'INVALID',
+      left_front_invalid_reason: 'none',
+      left_rear_invalid_reason: 'none',
+      right_front_invalid_reason: 'none',
+      right_rear_invalid_reason: 'none',
       left_front_clearance_m: 0,
       left_rear_clearance_m: 0,
       right_front_clearance_m: 0,
@@ -249,7 +264,7 @@ onBeforeUnmount(() => {
         <section class="panel-status">
           <span>状态</span>
           <strong class="status-badge" :class="badgeClass(status?.cloud_estimate?.seen)">
-            {{ qualityText(status?.cloud_estimate?.quality) }}
+            {{ qualityText(status?.cloud_estimate?.overall_status ?? status?.cloud_estimate?.quality) }}
           </strong>
         </section>
         <section class="info-section">

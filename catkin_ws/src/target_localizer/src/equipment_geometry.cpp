@@ -204,6 +204,34 @@ DistanceSample sampleSideDistance(const pcl::PointCloud<pcl::PointXYZI>& cloud,
     return sample;
 }
 
+std::string distanceInvalidReason(const DistanceSample& sample) {
+    if (sample.low_points) {
+        return "LOW_DISTANCE_POINTS";
+    }
+    if (sample.clearance_invalid) {
+        return "CLEARANCE_INVALID";
+    }
+    return "none";
+}
+
+std::string groundInvalidReason(bool enough_ground_points,
+                                const PlaneFit& ground,
+                                const EquipmentGeometryConfig& config) {
+    if (!enough_ground_points) {
+        return "LOW_GROUND_POINTS";
+    }
+    if (ground.inliers < config.min_ground_points) {
+        return "RANSAC_FAILED";
+    }
+    if (ground.rmse > config.max_ground_plane_rmse) {
+        return "HIGH_GROUND_RMSE";
+    }
+    if (ground.normal_z < config.min_ground_normal_z) {
+        return "BAD_GROUND_NORMAL";
+    }
+    return "RANSAC_FAILED";
+}
+
 }  // namespace
 
 EquipmentGeometryResult estimateEquipmentGeometry(
@@ -305,8 +333,10 @@ EquipmentGeometryResult estimateEquipmentGeometry(
         static_cast<double>(config.forward_sign) * config.front_sample_distance_m;
     const double rear_x =
         -static_cast<double>(config.forward_sign) * config.rear_sample_distance_m;
-    const int left_side = config.left_sign >= 0 ? 1 : -1;
-    const int right_side = -left_side;
+    // base_link 坐标系固定约定：+Y 为左侧，-Y 为右侧。left_sign 仅保留为
+    // 旧配置兼容项，不再参与左右判定，避免现场配置把左右距离反向。
+    constexpr int left_side = 1;
+    constexpr int right_side = -1;
 
     const DistanceSample lf = sampleSideDistance(cloud, front_x, left_side, config);
     const DistanceSample lr = sampleSideDistance(cloud, rear_x, left_side, config);
@@ -328,29 +358,42 @@ EquipmentGeometryResult estimateEquipmentGeometry(
     result.left_rear_valid = lr.valid;
     result.right_front_valid = rf.valid;
     result.right_rear_valid = rr.valid;
+    result.left_front_quality = lf.valid ? "OK" : "INVALID";
+    result.left_rear_quality = lr.valid ? "OK" : "INVALID";
+    result.right_front_quality = rf.valid ? "OK" : "INVALID";
+    result.right_rear_quality = rr.valid ? "OK" : "INVALID";
+    result.left_front_invalid_reason = distanceInvalidReason(lf);
+    result.left_rear_invalid_reason = distanceInvalidReason(lr);
+    result.right_front_invalid_reason = distanceInvalidReason(rf);
+    result.right_rear_invalid_reason = distanceInvalidReason(rr);
     result.distances_valid = lf.valid && lr.valid && rf.valid && rr.valid;
+    const bool any_distance_valid = lf.valid || lr.valid || rf.valid || rr.valid;
     result.attitude_valid = plane_valid || yaw_valid;
+    const std::string ground_reason =
+        groundInvalidReason(enough_ground_points, ground, config);
+    const std::string yaw_reason =
+        direction_count == 0
+            ? "LOW_WALL_POINTS"
+            : (pca_consistent ? "PCA_FAILED" : "PCA_INCONSISTENT");
+    result.roll_quality = result.roll_valid ? "OK" : "INVALID";
+    result.pitch_quality = result.pitch_valid ? "OK" : "INVALID";
+    result.yaw_quality = result.yaw_valid ? "OK" : "INVALID";
+    result.roll_invalid_reason = result.roll_valid ? "none" : ground_reason;
+    result.pitch_invalid_reason = result.pitch_valid ? "none" : ground_reason;
+    result.yaw_invalid_reason = result.yaw_valid ? "none" : yaw_reason;
     if (plane_valid && yaw_valid && result.distances_valid) {
-        result.quality = "OK";
+        result.overall_status = "OK";
+        result.quality = result.overall_status;
         result.invalid_reason = "none";
-    } else if (result.attitude_valid || result.distances_valid) {
-        result.quality = "DEGRADED";
+    } else if (result.attitude_valid || any_distance_valid) {
+        result.overall_status = "DEGRADED";
+        result.quality = result.overall_status;
         if (!enough_ground_points) {
             result.invalid_reason = "LOW_GROUND_POINTS";
         } else if (!plane_valid) {
-            if (ground.inliers < config.min_ground_points) {
-                result.invalid_reason = "RANSAC_FAILED";
-            } else if (ground.rmse > config.max_ground_plane_rmse) {
-                result.invalid_reason = "HIGH_GROUND_RMSE";
-            } else if (ground.normal_z < config.min_ground_normal_z) {
-                result.invalid_reason = "BAD_GROUND_NORMAL";
-            } else {
-                result.invalid_reason = "RANSAC_FAILED";
-            }
+            result.invalid_reason = ground_reason;
         } else if (!yaw_valid) {
-            result.invalid_reason = direction_count == 0
-                                        ? "LOW_WALL_POINTS"
-                                        : (pca_consistent ? "PCA_FAILED" : "PCA_INCONSISTENT");
+            result.invalid_reason = yaw_reason;
         } else if (lf.low_points || lr.low_points || rf.low_points || rr.low_points) {
             result.invalid_reason = "LOW_DISTANCE_POINTS";
         } else if (lf.clearance_invalid || lr.clearance_invalid ||
@@ -360,23 +403,14 @@ EquipmentGeometryResult estimateEquipmentGeometry(
             result.invalid_reason = "PARTIAL_VALID";
         }
     } else {
-        result.quality = "INVALID";
+        result.overall_status = "INVALID";
+        result.quality = result.overall_status;
         if (!enough_ground_points) {
             result.invalid_reason = "LOW_GROUND_POINTS";
         } else if (!plane_valid) {
-            if (ground.inliers < config.min_ground_points) {
-                result.invalid_reason = "RANSAC_FAILED";
-            } else if (ground.rmse > config.max_ground_plane_rmse) {
-                result.invalid_reason = "HIGH_GROUND_RMSE";
-            } else if (ground.normal_z < config.min_ground_normal_z) {
-                result.invalid_reason = "BAD_GROUND_NORMAL";
-            } else {
-                result.invalid_reason = "RANSAC_FAILED";
-            }
+            result.invalid_reason = ground_reason;
         } else if (!yaw_valid) {
-            result.invalid_reason = direction_count == 0
-                                        ? "LOW_WALL_POINTS"
-                                        : (pca_consistent ? "PCA_FAILED" : "PCA_INCONSISTENT");
+            result.invalid_reason = yaw_reason;
         } else {
             result.invalid_reason = "NO_VALID_OUTPUT";
         }

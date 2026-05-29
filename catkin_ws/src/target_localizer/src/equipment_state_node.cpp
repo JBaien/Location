@@ -5,9 +5,11 @@
 #include <string>
 
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl_ros/transforms.h>
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <target_localizer/EquipmentState.h>
+#include <tf/transform_listener.h>
 
 #include "target_localizer/equipment_geometry.h"
 
@@ -19,6 +21,7 @@ struct NodeConfig {
     std::string output_topic = "/equipment_state";
     std::string target_frame = "base_link";
     std::string required_frame_id = "base_link";
+    bool enable_tf_transform = false;
     double max_pointcloud_age_sec = 0.5;
     double distance_filter_alpha = 0.3;
     double max_distance_jump_m = 0.3;
@@ -48,6 +51,8 @@ private:
                           config_.target_frame);
         private_nh_.param("required_frame_id", config_.required_frame_id,
                           config_.required_frame_id);
+        private_nh_.param("enable_tf_transform", config_.enable_tf_transform,
+                          config_.enable_tf_transform);
         private_nh_.param("max_pointcloud_age_sec",
                           config_.max_pointcloud_age_sec,
                           config_.max_pointcloud_age_sec);
@@ -142,15 +147,34 @@ private:
     }
 
     void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg) {
+        sensor_msgs::PointCloud2 working_msg = *msg;
+        std::string input_failure;
+        if (!config_.required_frame_id.empty() &&
+            msg->header.frame_id != config_.required_frame_id) {
+            if (config_.enable_tf_transform) {
+                try {
+                    pcl_ros::transformPointCloud(config_.required_frame_id, *msg,
+                                                 working_msg, tf_listener_);
+                    working_msg.header.frame_id = config_.required_frame_id;
+                } catch (const tf::TransformException& ex) {
+                    input_failure = "TF_LOOKUP_FAILED";
+                    ROS_WARN_THROTTLE(2.0, "equipment_state_node TF failed: %s",
+                                      ex.what());
+                }
+            } else {
+                input_failure = "FRAME_ID_INVALID";
+            }
+        }
+
         pcl::PointCloud<pcl::PointXYZI> cloud;
-        pcl::fromROSMsg(*msg, cloud);
+        pcl::fromROSMsg(working_msg, cloud);
         EquipmentGeometryResult result =
             estimateEquipmentGeometry(cloud, config_.geometry);
-        applyInputQuality(*msg, cloud.size(), result);
+        applyInputQuality(working_msg, cloud.size(), input_failure, result);
         applyDistanceFilter(result);
 
         EquipmentState out;
-        out.header = msg->header;
+        out.header = working_msg.header;
         out.header.frame_id = config_.target_frame.empty()
                                   ? msg->header.frame_id
                                   : config_.target_frame;
@@ -183,25 +207,40 @@ private:
         out.right_front_points = result.right_front_points;
         out.right_rear_points = result.right_rear_points;
         out.point_count = static_cast<std::uint32_t>(cloud.size());
-        out.quality = result.quality;
+        out.quality = result.overall_status;
         out.invalid_reason = result.invalid_reason;
+        out.overall_status = result.overall_status;
+        out.roll_quality = result.roll_quality;
+        out.pitch_quality = result.pitch_quality;
+        out.yaw_quality = result.yaw_quality;
+        out.left_front_quality = result.left_front_quality;
+        out.left_rear_quality = result.left_rear_quality;
+        out.right_front_quality = result.right_front_quality;
+        out.right_rear_quality = result.right_rear_quality;
+        out.roll_invalid_reason = result.roll_invalid_reason;
+        out.pitch_invalid_reason = result.pitch_invalid_reason;
+        out.yaw_invalid_reason = result.yaw_invalid_reason;
+        out.left_front_invalid_reason = result.left_front_invalid_reason;
+        out.left_rear_invalid_reason = result.left_rear_invalid_reason;
+        out.right_front_invalid_reason = result.right_front_invalid_reason;
+        out.right_rear_invalid_reason = result.right_rear_invalid_reason;
         pub_.publish(out);
     }
 
     void applyInputQuality(const sensor_msgs::PointCloud2& msg,
                            std::size_t point_count,
+                           const std::string& input_failure,
                            EquipmentGeometryResult& result) const {
+        if (!input_failure.empty()) {
+            invalidateAll(input_failure, result);
+            return;
+        }
         if (point_count == 0U) {
             invalidateAll("NO_POINTCLOUD", result);
             return;
         }
         if (point_count < static_cast<std::size_t>(config_.geometry.min_total_points)) {
             invalidateAll("LOW_TOTAL_POINTS", result);
-            return;
-        }
-        if (!config_.required_frame_id.empty() &&
-            msg.header.frame_id != config_.required_frame_id) {
-            invalidateAll("FRAME_ID_INVALID", result);
             return;
         }
         if (config_.max_pointcloud_age_sec > 0.0 && !msg.header.stamp.isZero()) {
@@ -223,19 +262,46 @@ private:
         result.left_rear_valid = false;
         result.right_front_valid = false;
         result.right_rear_valid = false;
-        result.quality = "LOST";
+        result.overall_status = "LOST";
+        result.quality = result.overall_status;
         result.invalid_reason = reason;
+        result.roll_quality = "INVALID";
+        result.pitch_quality = "INVALID";
+        result.yaw_quality = "INVALID";
+        result.left_front_quality = "INVALID";
+        result.left_rear_quality = "INVALID";
+        result.right_front_quality = "INVALID";
+        result.right_rear_quality = "INVALID";
+        result.roll_invalid_reason = reason;
+        result.pitch_invalid_reason = reason;
+        result.yaw_invalid_reason = reason;
+        result.left_front_invalid_reason = reason;
+        result.left_rear_invalid_reason = reason;
+        result.right_front_invalid_reason = reason;
+        result.right_rear_invalid_reason = reason;
     }
 
     void applyDistanceFilter(EquipmentGeometryResult& result) {
-        filterDistance(result.left_front_valid, result.left_front_mm,
-                       last_left_front_mm_);
-        filterDistance(result.left_rear_valid, result.left_rear_mm,
-                       last_left_rear_mm_);
-        filterDistance(result.right_front_valid, result.right_front_mm,
-                       last_right_front_mm_);
-        filterDistance(result.right_rear_valid, result.right_rear_mm,
-                       last_right_rear_mm_);
+        const bool left_front_jump =
+            filterDistance(result.left_front_valid, result.left_front_mm,
+                           last_left_front_mm_);
+        const bool left_rear_jump =
+            filterDistance(result.left_rear_valid, result.left_rear_mm,
+                           last_left_rear_mm_);
+        const bool right_front_jump =
+            filterDistance(result.right_front_valid, result.right_front_mm,
+                           last_right_front_mm_);
+        const bool right_rear_jump =
+            filterDistance(result.right_rear_valid, result.right_rear_mm,
+                           last_right_rear_mm_);
+        markDistanceJump(left_front_jump, result.left_front_quality,
+                         result.left_front_invalid_reason);
+        markDistanceJump(left_rear_jump, result.left_rear_quality,
+                         result.left_rear_invalid_reason);
+        markDistanceJump(right_front_jump, result.right_front_quality,
+                         result.right_front_invalid_reason);
+        markDistanceJump(right_rear_jump, result.right_rear_quality,
+                         result.right_rear_invalid_reason);
         result.distances_valid = result.left_front_valid &&
                                  result.left_rear_valid &&
                                  result.right_front_valid &&
@@ -244,27 +310,40 @@ private:
         result.left_rear_clearance_m = result.left_rear_mm / 1000.0;
         result.right_front_clearance_m = result.right_front_mm / 1000.0;
         result.right_rear_clearance_m = result.right_rear_mm / 1000.0;
-        if (result.invalid_reason == "none" && !result.distances_valid) {
-            result.quality = result.attitude_valid ? "DEGRADED" : "INVALID";
+        if ((left_front_jump || left_rear_jump || right_front_jump || right_rear_jump) &&
+            (result.invalid_reason == "none" || result.invalid_reason == "PARTIAL_VALID")) {
+            result.overall_status = result.attitude_valid ? "DEGRADED" : "INVALID";
+            result.quality = result.overall_status;
             result.invalid_reason = "DISTANCE_JUMP_REJECTED";
         }
     }
 
-    void filterDistance(bool& valid, double& value_mm, double& last_mm) const {
+    bool filterDistance(bool& valid, double& value_mm, double& last_mm) const {
         if (!valid) {
-            return;
+            return false;
         }
         if (std::isfinite(last_mm)) {
             const double jump_m = std::abs(value_mm - last_mm) / 1000.0;
             if (config_.max_distance_jump_m > 0.0 &&
                 jump_m > config_.max_distance_jump_m) {
                 valid = false;
-                return;
+                return true;
             }
             value_mm = config_.distance_filter_alpha * value_mm +
                        (1.0 - config_.distance_filter_alpha) * last_mm;
         }
         last_mm = value_mm;
+        return false;
+    }
+
+    static void markDistanceJump(bool rejected,
+                                 std::string& quality,
+                                 std::string& invalid_reason) {
+        if (!rejected) {
+            return;
+        }
+        quality = "INVALID";
+        invalid_reason = "DISTANCE_JUMP_REJECTED";
     }
 
     ros::NodeHandle nh_;
@@ -272,6 +351,7 @@ private:
     NodeConfig config_;
     ros::Subscriber sub_;
     ros::Publisher pub_;
+    tf::TransformListener tf_listener_;
     double last_left_front_mm_ = std::numeric_limits<double>::quiet_NaN();
     double last_left_rear_mm_ = std::numeric_limits<double>::quiet_NaN();
     double last_right_front_mm_ = std::numeric_limits<double>::quiet_NaN();

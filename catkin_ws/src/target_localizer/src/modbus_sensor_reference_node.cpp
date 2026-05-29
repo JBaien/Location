@@ -184,6 +184,7 @@ private:
         state.header.frame_id = frame_id_;
         state.source = "modbus_tcp";
         state.quality = "LOST";
+        state.overall_status = "LOST";
 
         bool any_valid = false;
         bool read_failed = false;
@@ -198,6 +199,12 @@ private:
                 state.roll_valid = true;
                 state.pitch_valid = true;
                 state.yaw_valid = true;
+                state.roll_quality = "OK";
+                state.pitch_quality = "OK";
+                state.yaw_quality = "OK";
+                state.roll_invalid_reason = "none";
+                state.pitch_invalid_reason = "none";
+                state.yaw_invalid_reason = "none";
                 any_valid = true;
             } else {
                 read_failed = true;
@@ -222,6 +229,14 @@ private:
                 state.left_rear_valid = true;
                 state.right_front_valid = true;
                 state.right_rear_valid = true;
+                state.left_front_quality = "OK";
+                state.left_rear_quality = "OK";
+                state.right_front_quality = "OK";
+                state.right_rear_quality = "OK";
+                state.left_front_invalid_reason = "none";
+                state.left_rear_invalid_reason = "none";
+                state.right_front_invalid_reason = "none";
+                state.right_rear_invalid_reason = "none";
                 any_valid = true;
             } else {
                 read_failed = true;
@@ -231,6 +246,7 @@ private:
             sensor_client_.close();
         }
         state.quality = any_valid ? "OK" : "LOST";
+        state.overall_status = state.quality;
         state.invalid_reason = any_valid ? "none" : "TCP_READ_FAILED";
         pub_.publish(state);
     }
