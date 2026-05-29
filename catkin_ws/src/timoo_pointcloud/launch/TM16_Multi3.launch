@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<launch>
+
+
+    <!-- 启动三个雷达实例 -->
+    <group ns="lidar1">
+        <include file="$(find timoo_pointcloud)/launch/TM16.launch">
+            <arg name="device_ip" value="" />
+            <arg name="max_range" value="150.0" />
+            <arg name="min_range" value="0.4" />
+            <arg name="hide_line" value = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15" />
+
+            <arg name="left_min_angle" value="0"/>
+            <arg name="left_max_angle" value="180"/>
+            <arg name="right_min_angle" value="180"/>
+            <arg name="right_max_angle" value="360"/>
+            <arg name="pcap" value="" />
+            <arg name="port" value="2368" />
+            <arg name="status_port" value="7603" />
+            <arg name="filter_threshold" default="10,10,10,10" />
+        </include>
+    </group>
+
+    <group ns="lidar2">
+        <include file="$(find timoo_pointcloud)/launch/TM16.launch">
+            <arg name="device_ip" value="" />
+            <arg name="max_range" value="150.0" />
+            <arg name="min_range" value="0.4" />
+            <arg name="hide_line" value = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15" />
+
+            <arg name="left_min_angle" value="0"/>
+            <arg name="left_max_angle" value="180"/>
+            <arg name="right_min_angle" value="180"/>
+            <arg name="right_max_angle" value="360"/>
+            <arg name="pcap" value="" />
+            <arg name="port" value="3368" />
+            <arg name="status_port" value="8603" />
+            <arg name="filter_threshold" default="10,10,10,10" />
+        </include>
+    </group>
+
+    <group ns="lidar3">
+        <include file="$(find timoo_pointcloud)/launch/TM16.launch">
+            <arg name="device_ip" value="" />
+            <!-- <arg name="frame_id" value="timoo" /> -->
+            <!-- <arg name="manager" value="$(arg frame_id)_nodelet_manager" /> -->
+            <arg name="max_range" value="150.0" />
+            <arg name="min_range" value="0.4" />
+            <arg name="hide_line" value = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15" />
+
+            <arg name="left_min_angle" value="0"/>
+            <arg name="left_max_angle" value="180"/>
+            <arg name="right_min_angle" value="180"/>
+            <arg name="right_max_angle" value="360"/>
+            <arg name="pcap" value="" />
+            <arg name="port" value="4368" />
+            <arg name="status_port" value="9603" />
+            <!-- filter-->
+            <arg name="filter_threshold" default="10,10,10,10" />
+        </include>
+    </group>
+</launch>

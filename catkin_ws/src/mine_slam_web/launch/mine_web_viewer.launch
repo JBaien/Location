@@ -1,0 +1,10 @@
+<launch>
+  <arg name="config" default="$(find mine_slam_web)/config/web_viewer.yaml"/>
+
+  <rosparam command="load" file="$(arg config)"/>
+
+  <node pkg="mine_slam_web"
+        type="mine_web_bridge_node"
+        name="mine_web_bridge_node"
+        output="screen"/>
+</launch>

@@ -1,0 +1,35 @@
+input_topic: /points_raw
+target_frame: base_link
+
+measurement_topic: /target_measurement
+xy_topic: /target_xy
+status_topic: /target_status
+marker_topic: /target_marker
+roi_topic: /target_cloud_roi
+
+roi_x_min: -12.0
+roi_x_max: -4.0
+roi_y_min: -2.0
+roi_y_max: 2.0
+roi_z_min: -1.342
+roi_z_max: 0.858
+
+voxel_leaf: 0.02
+sor_mean_k: 20
+sor_stddev: 1.0
+normal_k: 20
+max_iterations: 200
+normal_distance_weight: 0.1
+cylinder_distance_threshold: 0.02
+radius_min: 0.095
+radius_max: 0.155
+min_candidate_points: 20
+
+reference_z: -0.142
+zero_x: -8.0
+zero_y: 0.0
+
+min_good_inliers: 25
+good_residual_rms: 0.015
+lost_after_misses: 3
+hold_duration: 0.3

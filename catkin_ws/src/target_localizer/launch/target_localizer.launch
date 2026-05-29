@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="config" default="$(find target_localizer)/config/target_localizer.yaml"/>
+
+  <node pkg="target_localizer"
+        type="target_localizer_node"
+        name="target_localizer_node"
+        output="screen">
+    <rosparam file="$(arg config)" command="load"/>
+  </node>
+</launch>

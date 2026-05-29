@@ -1,0 +1,26 @@
+multi_lidar_fusion:
+  lidar_num: 3
+
+  lidar_topics:
+    - /lidar1/timoo_points
+    - /lidar2/timoo_points
+    - /lidar3/timoo_points
+
+  output_topic: /points_raw
+  output_frame_id: base_link
+
+  sync_queue_size: 20
+  sync_slop: 0.05
+
+  tf_timeout: 0.05
+
+  drop_empty_cloud: true
+  min_points_per_lidar: 10
+
+  normalize_point_time: true
+
+  enable_voxel_filter: false
+  voxel_leaf_size: 0.05
+
+  enable_diagnostics: true
+  diagnostics_period: 1.0

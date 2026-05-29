@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+    <!-- 激光雷达融合节点 -->
+    <node name="lidar_fusion_node" pkg="lidar_fusion" type="lidar_fusion_node" output="screen">
+        <!-- 输入topic配置 -->
+        <param name="lslidar_topic" value="/lslidar_point_cloud" />
+        <param name="velodyne_topic" value="/velodyne_points_old" />
+        
+        <!-- 输出topic配置 -->
+        <param name="output_topic" value="/velodyne_points" />
+        
+        <!-- 输出坐标系frame_id配置 -->
+        <param name="output_frame_id" value="velodyne" />
+        
+        <!-- TF变换容忍度 -->
+        <param name="tf_tolerance" value="0.2" />
+    </node>
+    
+    <!-- 静态TF变换发布器 -->
+    <!-- 根据提供的参数：x=0.00903051, y=0.243625, z=0.0100529, yaw=0.0586917, pitch=-0.00286561, roll=-0.000914872 -->
+    <!-- 从/velodyne坐标系到/laser_link坐标系的变换 -->
+    <!-- 注意：请根据实际的点云数据frame_id调整坐标系名称 -->
+    <node pkg="tf" type="static_transform_publisher" name="velodyne_to_laser_link"
+          args="0.019894 -0.242798 0.10062 1.272 -0.060 0.416 /velodyne /laser_link 10" />
+    
+    <!-- 参数说明：
+         - 如果需要将融合结果输出到velodyne坐标系，设置output_frame_id为"velodyne"
+         - 如果需要将融合结果输出到laser_link坐标系，设置output_frame_id为"laser_link"
+         - TF变换会自动将lslidar点云从laser_link坐标系转换到velodyne坐标系(如果output_frame_id=velodyne)
+         - 或者将velodyne点云从velodyne坐标系转换到laser_link坐标系(如果output_frame_id=laser_link)
+    -->
+    
+    <!-- 可选：添加rviz可视化 -->
+    <!--
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find lidar_fusion)/config/lidar_fusion.rviz" />
+    -->
+    
+</launch>

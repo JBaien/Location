@@ -1,0 +1,12 @@
+.git
+catkin_ws/build
+catkin_ws/devel
+catkin_ws/install
+catkin_ws/log
+**/node_modules
+**/web/dist
+docker/runtime/bags
+*.bag
+*.bag.active
+*.pcd
+*.log

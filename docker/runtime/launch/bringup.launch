@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Runtime switches. Keep these files outside the image and edit them on site. -->
+  <arg name="enable_driver" default="true"/>
+  <arg name="enable_fusion" default="true"/>
+  <arg name="enable_target_localizer" default="true"/>
+  <arg name="enable_web_bridge" default="true"/>
+  <arg name="enable_record" default="false"/>
+
+  <arg name="driver_launch" default="/config/launch/driver_tm16_multi3.launch"/>
+  <arg name="fusion_config" default="/config/lidar_fusion/multi_lidar_fusion.yaml"/>
+  <arg name="target_config" default="/config/target_localizer/target_localizer.yaml"/>
+  <arg name="web_config" default="/config/web/web_viewer.yaml"/>
+  <arg name="record_launch" default="/config/launch/record_points.launch"/>
+
+  <group if="$(arg enable_driver)">
+    <include file="$(arg driver_launch)"/>
+  </group>
+
+  <group if="$(arg enable_fusion)">
+    <include file="$(find lidar_fusion)/launch/multi_lidar_fusion.launch">
+      <arg name="config" value="$(arg fusion_config)"/>
+      <arg name="publish_static_tf" value="true"/>
+      <!-- Replace these with measured extrinsics after lidar-lidar calibration. -->
+      <arg name="base_to_lidar1_xyz_ypr" value="0 0 0 0 0 0"/>
+      <arg name="lidar1_to_lidar2_xyz_ypr" value="0 0 0 0 0 0"/>
+      <arg name="lidar1_to_lidar3_xyz_ypr" value="0 0 0 0 0 0"/>
+    </include>
+  </group>
+
+  <group if="$(arg enable_target_localizer)">
+    <include file="$(find target_localizer)/launch/target_localizer.launch">
+      <arg name="config" value="$(arg target_config)"/>
+    </include>
+  </group>
+
+  <group if="$(arg enable_web_bridge)">
+    <include file="$(find mine_slam_web)/launch/mine_web_viewer.launch">
+      <arg name="config" value="$(arg web_config)"/>
+    </include>
+  </group>
+
+  <group if="$(arg enable_record)">
+    <include file="$(arg record_launch)"/>
+  </group>
+</launch>

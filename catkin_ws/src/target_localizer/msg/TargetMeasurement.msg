@@ -1,0 +1,14 @@
+std_msgs/Header header
+float64 center_x
+float64 center_y
+float64 center_z
+float64 dx
+float64 dy
+float64 radius
+uint32 inlier_count
+float64 residual_rms
+float64 covariance_xx
+float64 covariance_xy
+float64 covariance_yy
+uint8 status
+string status_text

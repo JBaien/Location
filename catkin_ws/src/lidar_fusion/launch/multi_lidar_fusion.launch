@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="config"
+       default="$(find lidar_fusion)/config/multi_lidar_fusion.yaml" />
+
+  <!--
+    Set true only when this launch is responsible for publishing LiDAR extrinsics.
+    If another calibration/bringup launch already publishes these TFs, keep it false.
+  -->
+  <arg name="publish_static_tf" default="false" />
+
+  <!--
+    TF convention for the 3-TM16 setup:
+      base_link -> lidar1
+      lidar1    -> lidar2
+      lidar1    -> lidar3
+
+    ROS Noetic tf2_ros/static_transform_publisher Euler order:
+      x y z yaw pitch roll parent_frame child_frame
+
+    Replace the defaults with measured extrinsics. If lidar1 is the reference
+    LiDAR and also treated as base_link, keep base_to_lidar1 as all zeros.
+  -->
+  <arg name="base_to_lidar1_xyz_ypr" default="0 0 0 0 0 0" />
+  <arg name="lidar1_to_lidar2_xyz_ypr" default="0 0 0 0 0 0" />
+  <arg name="lidar1_to_lidar3_xyz_ypr" default="0 0 0 0 0 0" />
+
+  <rosparam file="$(arg config)" command="load" />
+
+  <group if="$(arg publish_static_tf)">
+    <node pkg="tf2_ros"
+          type="static_transform_publisher"
+          name="base_to_lidar1"
+          args="$(arg base_to_lidar1_xyz_ypr) base_link lidar1" />
+
+    <node pkg="tf2_ros"
+          type="static_transform_publisher"
+          name="lidar1_to_lidar2"
+          args="$(arg lidar1_to_lidar2_xyz_ypr) lidar1 lidar2" />
+
+    <node pkg="tf2_ros"
+          type="static_transform_publisher"
+          name="lidar1_to_lidar3"
+          args="$(arg lidar1_to_lidar3_xyz_ypr) lidar1 lidar3" />
+  </group>
+
+  <node pkg="lidar_fusion"
+        type="multi_lidar_fusion_node"
+        name="multi_lidar_fusion_node"
+        output="screen" />
+</launch>
