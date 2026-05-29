@@ -31,7 +31,7 @@ std::int16_t signedRegister(std::uint16_t value) {
 
 class ModbusClient {
 public:
-    explicit ModbusClient(boost::asio::io_context& io) : io_(io), socket_(io) {}
+    explicit ModbusClient(boost::asio::io_service& io) : io_(io), socket_(io) {}
 
     bool readHoldingRegisters(const ModbusDeviceConfig& config,
                               int start_address,
@@ -41,9 +41,9 @@ public:
         boost::system::error_code ec;
         if (!socket_.is_open()) {
             tcp::resolver resolver(io_);
-            const auto endpoints = resolver.resolve(config.host,
-                                                    std::to_string(config.port),
-                                                    ec);
+            tcp::resolver::query query(config.host,
+                                       std::to_string(config.port));
+            const auto endpoints = resolver.resolve(query, ec);
             if (ec) {
                 return false;
             }
@@ -100,7 +100,7 @@ public:
     }
 
 private:
-    boost::asio::io_context& io_;
+    boost::asio::io_service& io_;
     tcp::socket socket_;
     std::uint16_t transaction_id_ = 0;
 };
@@ -285,7 +285,7 @@ private:
 
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
-    boost::asio::io_context io_;
+    boost::asio::io_service io_;
     ModbusClient sensor_client_;
     ros::Publisher pub_;
     ros::Timer timer_;
