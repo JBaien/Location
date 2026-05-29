@@ -103,6 +103,31 @@ forward_sign: 1
 left_sign: 1
 ```
 
+这些参数含义如下：
+
+- `front_sample_distance_m`：前测量点距离设备中心的前向距离，单位米，用于计算左前、右前距离。
+- `rear_sample_distance_m`：后测量点距离设备中心的后向距离，单位米，用于计算左后、右后距离。
+- `sample_window_x_m`：前/后测量点沿 X 方向的采样窗口宽度，单位米。例如前测量点在 2.0 m、窗口为 0.4 m 时，会取约 1.8 m 到 2.2 m 范围内的点。
+- `forward_sign`：定义设备“前方”对应的 X 轴方向。`1` 表示 +X 为前方，`-1` 表示 -X 为前方。
+- `left_sign`：定义设备“左侧”对应的 Y 轴方向。`1` 表示 +Y 为左侧，`-1` 表示 -Y 为左侧。
+
+## 设备姿态与四角距离计算
+
+`equipment_state_node` 订阅融合后的 `/points_raw`，从当前点云中估算设备姿态和左右前后距离，并发布 `/equipment_state`。
+
+姿态角计算：
+
+- 俯仰角和横滚角：在设备附近地面 ROI 内筛选底板点，拟合平面 `z = ax + by + c`。`a` 表示前后坡度，用于计算俯仰角；`b` 表示左右坡度，用于计算横滚角。
+- 偏航角：在侧壁 ROI 内筛选左右边界点，投影到 XY 平面并拟合巷道主方向 `y = kx + b`，由斜率 `k` 计算设备相对巷道方向的偏航角。
+
+四角距离计算：
+
+- 根据 `front_sample_distance_m` 和 `rear_sample_distance_m` 确定前、后两个 X 向采样位置。
+- 根据 `left_sign` 区分左侧和右侧，在侧向 ROI 内分别取左前、左后、右前、右后点云。
+- 每个采样区会按 `sample_window_x_m` 限制前后宽度，并按 `side_y_abs_min/side_y_abs_max`、`side_z_min/side_z_max` 过滤有效侧壁点。
+- 距离值取侧向距离的低分位数，默认 `distance_percentile: 0.1`，这样比直接取最小值更抗孤立噪点。
+- 每个方向有效点数至少需要达到 `min_distance_points`，否则该方向距离无效，网页显示为空值。
+
 ## TCP 惯导与毫米波雷达配置
 
 惯导和毫米波雷达真实值由 `modbus_sensor_reference_node` 通过 MODBUS TCP 读取，并统一发布到 `/sensor_reference`。现场惯导和毫米波雷达使用同一个 TCP 设备 IP；Docker 部署后可直接修改挂载到容器内的外挂 YAML，无需重建镜像。
