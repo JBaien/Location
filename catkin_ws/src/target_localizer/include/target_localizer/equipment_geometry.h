@@ -29,6 +29,9 @@ struct EquipmentGeometryConfig {
     double side_z_min = -1.5;
     double side_z_max = 1.5;
     double distance_percentile = 0.10;
+    double equipment_half_width_m = 0.0;
+    double max_ground_plane_rmse = 0.08;
+    double min_ground_normal_z = 0.85;
     int min_ground_points = 20;
     int min_wall_points = 20;
     int min_distance_points = 5;
@@ -39,9 +42,17 @@ struct EquipmentGeometryConfig {
 struct EquipmentGeometryResult {
     bool attitude_valid = false;
     bool distances_valid = false;
+    bool roll_valid = false;
+    bool pitch_valid = false;
+    bool yaw_valid = false;
+    bool left_front_valid = false;
+    bool left_rear_valid = false;
+    bool right_front_valid = false;
+    bool right_rear_valid = false;
     double roll_deg = 0.0;
     double pitch_deg = 0.0;
     double yaw_deg = 0.0;
+    double ground_plane_rmse = 0.0;
     double left_front_mm = 0.0;
     double left_rear_mm = 0.0;
     double right_front_mm = 0.0;

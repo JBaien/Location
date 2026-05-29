@@ -101,6 +101,9 @@ rear_sample_distance_m: 2.0
 sample_window_x_m: 0.4
 forward_sign: 1
 left_sign: 1
+equipment_half_width_m: 1.2
+max_ground_plane_rmse: 0.08
+min_ground_normal_z: 0.85
 ```
 
 这些参数含义如下：
@@ -110,15 +113,17 @@ left_sign: 1
 - `sample_window_x_m`：前/后测量点沿 X 方向的采样窗口宽度，单位米。例如前测量点在 2.0 m、窗口为 0.4 m 时，会取约 1.8 m 到 2.2 m 范围内的点。
 - `forward_sign`：定义设备“前方”对应的 X 轴方向。`1` 表示 +X 为前方，`-1` 表示 -X 为前方。
 - `left_sign`：定义设备“左侧”对应的 Y 轴方向。`1` 表示 +Y 为左侧，`-1` 表示 -Y 为左侧。
+- `equipment_half_width_m`：设备半宽，单位米。四角距离会从雷达坐标到侧壁距离中扣除该值，显示为设备外轮廓到侧壁的剩余距离。
 
 ## 设备姿态与四角距离计算
 
-`equipment_state_node` 订阅融合后的 `/points_raw`，从当前点云中估算设备姿态和左右前后距离，并发布 `/equipment_state`。
+`equipment_state_node` 订阅融合后的 `/points_raw`，从当前点云中估算设备相对巷道/底板的姿态趋势和左右前后剩余距离，并发布 `/equipment_state`。它不是严格 IMU 姿态解算，真实控制或安全联锁应优先使用惯导，并把点云结果作为环境参考或校验。
 
 姿态角计算：
 
-- 俯仰角和横滚角：在设备附近地面 ROI 内筛选底板点，拟合平面 `z = ax + by + c`。`a` 表示前后坡度，用于计算俯仰角；`b` 表示左右坡度，用于计算横滚角。
-- 偏航角：在侧壁 ROI 内筛选左右边界点，投影到 XY 平面并拟合巷道主方向 `y = kx + b`，由斜率 `k` 计算设备相对巷道方向的偏航角。
+- 俯仰角和横滚角：在设备附近地面 ROI 内筛选底板点，先用 RANSAC 平面剔除浮煤、车体结构、线缆等离群点，再用内点拟合平面 `z = ax + by + c`。`a` 表示前后坡度，用于计算俯仰角；`b` 表示左右坡度，用于计算横滚角。
+- 地面平面需要满足 `min_ground_points`、`max_ground_plane_rmse` 和 `min_ground_normal_z`，否则俯仰/横滚会标记为无效。
+- 偏航角：在侧壁 ROI 内筛选左右边界点，投影到 XY 平面后用 PCA 估计巷道主方向向量 `dir = [dx, dy]`，再用 `atan2(dy, dx)` 计算设备相对巷道方向的偏航角，避免 `y = kx + b` 斜率形式在异常角度下不稳定。
 
 四角距离计算：
 
@@ -126,7 +131,9 @@ left_sign: 1
 - 根据 `left_sign` 区分左侧和右侧，在侧向 ROI 内分别取左前、左后、右前、右后点云。
 - 每个采样区会按 `sample_window_x_m` 限制前后宽度，并按 `side_y_abs_min/side_y_abs_max`、`side_z_min/side_z_max` 过滤有效侧壁点。
 - 距离值取侧向距离的低分位数，默认 `distance_percentile: 0.1`，这样比直接取最小值更抗孤立噪点。
+- 输出距离会扣除 `equipment_half_width_m`，因此网页显示的是设备外轮廓到侧壁的剩余距离，不是雷达坐标原点到侧壁的距离。
 - 每个方向有效点数至少需要达到 `min_distance_points`，否则该方向距离无效，网页显示为空值。
+- `/equipment_state` 同时发布整体有效性和单项有效性，包括 `roll_valid`、`pitch_valid`、`yaw_valid`、`left_front_valid`、`left_rear_valid`、`right_front_valid`、`right_rear_valid`，并带有参与计算的点数和 `quality` 状态。
 
 ## TCP 惯导与毫米波雷达配置
 

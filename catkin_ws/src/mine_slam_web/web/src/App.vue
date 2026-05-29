@@ -98,14 +98,23 @@ function emptyMetric(): EquipmentMetricState {
     stamp_ns: 0,
     attitude: {
       valid: false,
+      roll_valid: false,
+      pitch_valid: false,
+      yaw_valid: false,
       roll_deg: 0,
       pitch_deg: 0,
       yaw_deg: 0,
+      ground_plane_rmse: 0,
       ground_points: 0,
-      wall_points: 0
+      wall_points: 0,
+      point_count: 0
     },
     distances: {
       valid: false,
+      left_front_valid: false,
+      left_rear_valid: false,
+      right_front_valid: false,
+      right_rear_valid: false,
       left_front_mm: 0,
       left_rear_mm: 0,
       right_front_mm: 0,
@@ -249,33 +258,33 @@ onBeforeUnmount(() => {
           <h3>姿态角</h3>
           <div class="metric-card">
             <span class="metric-label">俯仰角</span>
-            <strong class="metric-value"><b>{{ formatAngle(cloudMetric.attitude.valid ? cloudMetric.attitude.pitch_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
+            <strong class="metric-value"><b>{{ formatAngle(cloudMetric.attitude.pitch_valid ? cloudMetric.attitude.pitch_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
           </div>
           <div class="metric-card">
             <span class="metric-label">横滚角</span>
-            <strong class="metric-value"><b>{{ formatAngle(cloudMetric.attitude.valid ? cloudMetric.attitude.roll_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
+            <strong class="metric-value"><b>{{ formatAngle(cloudMetric.attitude.roll_valid ? cloudMetric.attitude.roll_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
           </div>
           <div class="metric-card">
             <span class="metric-label">偏航角</span>
-            <strong class="metric-value"><b>{{ formatAngle(cloudMetric.attitude.valid ? cloudMetric.attitude.yaw_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
+            <strong class="metric-value"><b>{{ formatAngle(cloudMetric.attitude.yaw_valid ? cloudMetric.attitude.yaw_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
           </div>
         </section>
         <section class="metric-grid distance-grid">
           <div class="metric-card">
             <span class="metric-label">左前</span>
-            <strong class="metric-value"><b>{{ formatDistance(cloudMetric.distances.valid ? cloudMetric.distances.left_front_mm : undefined) }}</b><em>mm</em></strong>
+            <strong class="metric-value"><b>{{ formatDistance(cloudMetric.distances.left_front_valid ? cloudMetric.distances.left_front_mm : undefined) }}</b><em>mm</em></strong>
           </div>
           <div class="metric-card">
             <span class="metric-label">右前</span>
-            <strong class="metric-value"><b>{{ formatDistance(cloudMetric.distances.valid ? cloudMetric.distances.right_front_mm : undefined) }}</b><em>mm</em></strong>
+            <strong class="metric-value"><b>{{ formatDistance(cloudMetric.distances.right_front_valid ? cloudMetric.distances.right_front_mm : undefined) }}</b><em>mm</em></strong>
           </div>
           <div class="metric-card">
             <span class="metric-label">左后</span>
-            <strong class="metric-value"><b>{{ formatDistance(cloudMetric.distances.valid ? cloudMetric.distances.left_rear_mm : undefined) }}</b><em>mm</em></strong>
+            <strong class="metric-value"><b>{{ formatDistance(cloudMetric.distances.left_rear_valid ? cloudMetric.distances.left_rear_mm : undefined) }}</b><em>mm</em></strong>
           </div>
           <div class="metric-card">
             <span class="metric-label">右后</span>
-            <strong class="metric-value"><b>{{ formatDistance(cloudMetric.distances.valid ? cloudMetric.distances.right_rear_mm : undefined) }}</b><em>mm</em></strong>
+            <strong class="metric-value"><b>{{ formatDistance(cloudMetric.distances.right_rear_valid ? cloudMetric.distances.right_rear_mm : undefined) }}</b><em>mm</em></strong>
           </div>
         </section>
       </aside>
@@ -295,34 +304,34 @@ onBeforeUnmount(() => {
           <h3>惯导数据</h3>
           <div class="metric-card">
             <span class="metric-label">俯仰角</span>
-            <strong class="metric-value"><b>{{ formatAngle(realMetric.attitude.valid ? realMetric.attitude.pitch_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
+            <strong class="metric-value"><b>{{ formatAngle(realMetric.attitude.pitch_valid ? realMetric.attitude.pitch_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
           </div>
           <div class="metric-card">
             <span class="metric-label">横滚角</span>
-            <strong class="metric-value"><b>{{ formatAngle(realMetric.attitude.valid ? realMetric.attitude.roll_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
+            <strong class="metric-value"><b>{{ formatAngle(realMetric.attitude.roll_valid ? realMetric.attitude.roll_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
           </div>
           <div class="metric-card">
             <span class="metric-label">偏航角</span>
-            <strong class="metric-value"><b>{{ formatAngle(realMetric.attitude.valid ? realMetric.attitude.yaw_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
+            <strong class="metric-value"><b>{{ formatAngle(realMetric.attitude.yaw_valid ? realMetric.attitude.yaw_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
           </div>
         </section>
         <h3 class="section-heading radar-title">毫米波雷达数据</h3>
         <section class="metric-grid distance-grid">
           <div class="metric-card">
             <span class="metric-label">左前毫米波</span>
-            <strong class="metric-value"><b>{{ formatDistance(realMetric.distances.valid ? realMetric.distances.left_front_mm : undefined) }}</b><em>mm</em></strong>
+            <strong class="metric-value"><b>{{ formatDistance(realMetric.distances.left_front_valid ? realMetric.distances.left_front_mm : undefined) }}</b><em>mm</em></strong>
           </div>
           <div class="metric-card">
             <span class="metric-label">右前毫米波</span>
-            <strong class="metric-value"><b>{{ formatDistance(realMetric.distances.valid ? realMetric.distances.right_front_mm : undefined) }}</b><em>mm</em></strong>
+            <strong class="metric-value"><b>{{ formatDistance(realMetric.distances.right_front_valid ? realMetric.distances.right_front_mm : undefined) }}</b><em>mm</em></strong>
           </div>
           <div class="metric-card">
             <span class="metric-label">左后毫米波</span>
-            <strong class="metric-value"><b>{{ formatDistance(realMetric.distances.valid ? realMetric.distances.left_rear_mm : undefined) }}</b><em>mm</em></strong>
+            <strong class="metric-value"><b>{{ formatDistance(realMetric.distances.left_rear_valid ? realMetric.distances.left_rear_mm : undefined) }}</b><em>mm</em></strong>
           </div>
           <div class="metric-card">
             <span class="metric-label">右后毫米波</span>
-            <strong class="metric-value"><b>{{ formatDistance(realMetric.distances.valid ? realMetric.distances.right_rear_mm : undefined) }}</b><em>mm</em></strong>
+            <strong class="metric-value"><b>{{ formatDistance(realMetric.distances.right_rear_valid ? realMetric.distances.right_rear_mm : undefined) }}</b><em>mm</em></strong>
           </div>
         </section>
       </aside>

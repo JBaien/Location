@@ -205,6 +205,9 @@ private:
                 state.pitch_deg = readScaled(regs, base, pitch_);
                 state.yaw_deg = readScaled(regs, base, yaw_);
                 state.attitude_valid = true;
+                state.roll_valid = true;
+                state.pitch_valid = true;
+                state.yaw_valid = true;
                 any_valid = true;
             } else {
                 ins_client_.close();
@@ -221,6 +224,10 @@ private:
                 state.right_front_mm = readScaled(regs, base, right_front_);
                 state.right_rear_mm = readScaled(regs, base, right_rear_);
                 state.distances_valid = true;
+                state.left_front_valid = true;
+                state.left_rear_valid = true;
+                state.right_front_valid = true;
+                state.right_rear_valid = true;
                 any_valid = true;
             } else {
                 radar_client_.close();

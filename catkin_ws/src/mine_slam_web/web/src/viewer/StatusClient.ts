@@ -5,14 +5,23 @@ export interface EquipmentMetricState {
   stamp_ns: number;
   attitude: {
     valid: boolean;
+    roll_valid?: boolean;
+    pitch_valid?: boolean;
+    yaw_valid?: boolean;
     roll_deg: number;
     pitch_deg: number;
     yaw_deg: number;
+    ground_plane_rmse?: number;
     ground_points: number;
     wall_points: number;
+    point_count?: number;
   };
   distances: {
     valid: boolean;
+    left_front_valid?: boolean;
+    left_rear_valid?: boolean;
+    right_front_valid?: boolean;
+    right_rear_valid?: boolean;
     left_front_mm: number;
     left_rear_mm: number;
     right_front_mm: number;

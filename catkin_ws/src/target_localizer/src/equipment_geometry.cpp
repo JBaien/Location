@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <random>
 
 #include <Eigen/Dense>
 
@@ -37,6 +38,127 @@ struct DistanceSample {
     bool valid = false;
 };
 
+struct PlaneFit {
+    bool valid = false;
+    double a = 0.0;
+    double b = 0.0;
+    double c = 0.0;
+    double rmse = 0.0;
+    double normal_z = 0.0;
+    int inliers = 0;
+};
+
+bool fitPcaDirection(const std::vector<Eigen::Vector2d>& points,
+                     Eigen::Vector2d& direction) {
+    if (points.size() < 2U) {
+        return false;
+    }
+    Eigen::Vector2d mean(0.0, 0.0);
+    for (const auto& point : points) {
+        mean += point;
+    }
+    mean /= static_cast<double>(points.size());
+
+    double sxx = 0.0;
+    double syy = 0.0;
+    double sxy = 0.0;
+    for (const auto& point : points) {
+        const double dx = point.x() - mean.x();
+        const double dy = point.y() - mean.y();
+        sxx += dx * dx;
+        syy += dy * dy;
+        sxy += dx * dy;
+    }
+    const double theta = 0.5 * std::atan2(2.0 * sxy, sxx - syy);
+    direction = Eigen::Vector2d(std::cos(theta), std::sin(theta));
+    if (direction.x() < 0.0) {
+        direction = -direction;
+    }
+    return direction.allFinite() && direction.norm() > 1e-6;
+}
+
+bool solvePlaneLeastSquares(const std::vector<Eigen::Vector3d>& points,
+                            PlaneFit& fit) {
+    if (points.size() < 3U) {
+        return false;
+    }
+    Eigen::MatrixXd a(points.size(), 3);
+    Eigen::VectorXd b(points.size());
+    for (int i = 0; i < static_cast<int>(points.size()); ++i) {
+        a(i, 0) = points[i].x();
+        a(i, 1) = points[i].y();
+        a(i, 2) = 1.0;
+        b(i) = points[i].z();
+    }
+    const Eigen::Vector3d coeff = a.colPivHouseholderQr().solve(b);
+    if (!coeff.allFinite()) {
+        return false;
+    }
+
+    double sq_error = 0.0;
+    for (const auto& point : points) {
+        const double residual =
+            point.z() - (coeff.x() * point.x() + coeff.y() * point.y() + coeff.z());
+        sq_error += residual * residual;
+    }
+    const Eigen::Vector3d normal(-coeff.x(), -coeff.y(), 1.0);
+    fit.a = coeff.x();
+    fit.b = coeff.y();
+    fit.c = coeff.z();
+    fit.rmse = std::sqrt(sq_error / static_cast<double>(points.size()));
+    fit.normal_z = std::abs(normal.normalized().z());
+    fit.inliers = static_cast<int>(points.size());
+    fit.valid = std::isfinite(fit.rmse) && std::isfinite(fit.normal_z);
+    return fit.valid;
+}
+
+PlaneFit fitGroundPlaneRansac(const std::vector<Eigen::Vector3d>& points,
+                              const EquipmentGeometryConfig& config) {
+    PlaneFit best;
+    if (points.size() < static_cast<std::size_t>(config.min_ground_points)) {
+        return best;
+    }
+
+    constexpr int kIterations = 80;
+    const double threshold = std::max(0.02, config.max_ground_plane_rmse);
+    std::mt19937 rng(7);
+    std::uniform_int_distribution<std::size_t> pick(0, points.size() - 1U);
+
+    std::vector<Eigen::Vector3d> best_inliers;
+    for (int i = 0; i < kIterations; ++i) {
+        const auto& p1 = points[pick(rng)];
+        const auto& p2 = points[pick(rng)];
+        const auto& p3 = points[pick(rng)];
+        const Eigen::Vector3d normal = (p2 - p1).cross(p3 - p1);
+        if (normal.norm() < 1e-6 || std::abs(normal.z()) < 1e-6) {
+            continue;
+        }
+        const double a = -normal.x() / normal.z();
+        const double b = -normal.y() / normal.z();
+        const double c = normal.dot(p1) / normal.z();
+        std::vector<Eigen::Vector3d> inliers;
+        inliers.reserve(points.size());
+        for (const auto& point : points) {
+            const double residual = std::abs(point.z() - (a * point.x() + b * point.y() + c));
+            if (residual <= threshold) {
+                inliers.push_back(point);
+            }
+        }
+        if (inliers.size() > best_inliers.size()) {
+            best_inliers = std::move(inliers);
+        }
+    }
+
+    if (best_inliers.size() < static_cast<std::size_t>(config.min_ground_points)) {
+        return best;
+    }
+    solvePlaneLeastSquares(best_inliers, best);
+    best.valid = best.valid &&
+                 best.rmse <= config.max_ground_plane_rmse &&
+                 best.normal_z >= config.min_ground_normal_z;
+    return best;
+}
+
 DistanceSample sampleSideDistance(const pcl::PointCloud<pcl::PointXYZI>& cloud,
                                   double station_x,
                                   int side_sign,
@@ -64,7 +186,11 @@ DistanceSample sampleSideDistance(const pcl::PointCloud<pcl::PointXYZI>& cloud,
     DistanceSample sample;
     sample.points = static_cast<int>(distances.size());
     if (sample.points >= config.min_distance_points) {
-        sample.mm = percentile(distances, config.distance_percentile) * 1000.0;
+        const double wall_distance =
+            percentile(distances, config.distance_percentile);
+        const double clearance =
+            wall_distance - std::max(0.0, config.equipment_half_width_m);
+        sample.mm = std::max(0.0, clearance) * 1000.0;
         sample.valid = std::isfinite(sample.mm);
     }
     return sample;
@@ -78,9 +204,11 @@ EquipmentGeometryResult estimateEquipmentGeometry(
     EquipmentGeometryResult result;
 
     std::vector<Eigen::Vector3d> ground_points;
-    std::vector<Eigen::Vector2d> wall_points;
+    std::vector<Eigen::Vector2d> left_wall_points;
+    std::vector<Eigen::Vector2d> right_wall_points;
     ground_points.reserve(cloud.size());
-    wall_points.reserve(cloud.size());
+    left_wall_points.reserve(cloud.size() / 2U);
+    right_wall_points.reserve(cloud.size() / 2U);
 
     for (const auto& point : cloud.points) {
         if (!finitePoint(point)) {
@@ -93,66 +221,59 @@ EquipmentGeometryResult estimateEquipmentGeometry(
             inRange(point.z, config.ground_z_min, config.ground_z_max)) {
             ground_points.emplace_back(point.x, point.y, point.z);
         }
-        // 偏航角来自巷道左右边界的主方向。这里只用 |y| 较大的侧壁/边界点，
-        // 并投影到 XY 平面拟合 y = kx + b，k 对应设备前向和巷道方向的夹角。
+        // 偏航角来自巷道左右边界的主方向。左右墙分开做 PCA，避免两堵墙的
+        // 横向间距把主方向拉偏；再把方向统一到 +X 半平面后求平均。
         if (inRange(point.x, config.wall_x_min, config.wall_x_max) &&
             std::abs(point.y) >= config.wall_y_abs_min &&
             std::abs(point.y) <= config.wall_y_abs_max &&
             inRange(point.z, config.wall_z_min, config.wall_z_max)) {
-            wall_points.emplace_back(point.x, point.y);
+            if (point.y >= 0.0) {
+                left_wall_points.emplace_back(point.x, point.y);
+            } else {
+                right_wall_points.emplace_back(point.x, point.y);
+            }
         }
     }
 
     result.ground_points = static_cast<int>(ground_points.size());
-    result.wall_points = static_cast<int>(wall_points.size());
+    result.wall_points = static_cast<int>(left_wall_points.size() +
+                                          right_wall_points.size());
 
     bool plane_valid = false;
-    if (result.ground_points >= config.min_ground_points) {
-        Eigen::MatrixXd a(result.ground_points, 3);
-        Eigen::VectorXd b(result.ground_points);
-        for (int i = 0; i < result.ground_points; ++i) {
-            a(i, 0) = ground_points[i].x();
-            a(i, 1) = ground_points[i].y();
-            a(i, 2) = 1.0;
-            b(i) = ground_points[i].z();
-        }
-        // 以 z = ax + by + c 拟合局部地面。a 反映前后坡度，b 反映左右坡度。
-        // pitch = atan(a)，roll = atan(-b)：符号约定与 base_link 中 X 前、Y 左、
-        // Z 上的常见车辆坐标系一致，便于和惯导 roll/pitch 做同屏对比。
-        const Eigen::Vector3d coeff =
-            a.colPivHouseholderQr().solve(b);
-        result.pitch_deg = std::atan(coeff.x()) * kRadToDeg;
-        result.roll_deg = std::atan(-coeff.y()) * kRadToDeg;
+    const PlaneFit ground = fitGroundPlaneRansac(ground_points, config);
+    if (ground.valid) {
+        // RANSAC 先剔除浮煤、车体结构、线缆等离群点，再用内点最小二乘细化平面。
+        // 通过法向量 n=[-a,-b,1] 和 normal_z/RMSE 做有效性约束，避免墙面或障碍物
+        // 被误当作底板。符号约定对应 base_link 中 X 前、Y 左、Z 上。
+        result.pitch_deg = std::atan2(ground.a, 1.0) * kRadToDeg;
+        result.roll_deg = std::atan2(-ground.b, 1.0) * kRadToDeg;
+        result.ground_plane_rmse = ground.rmse;
+        result.ground_points = ground.inliers;
         plane_valid = std::isfinite(result.pitch_deg) &&
                       std::isfinite(result.roll_deg);
+        result.pitch_valid = plane_valid;
+        result.roll_valid = plane_valid;
     }
 
     bool yaw_valid = false;
-    if (result.wall_points >= config.min_wall_points) {
-        double mean_x = 0.0;
-        double mean_y = 0.0;
-        for (const auto& point : wall_points) {
-            mean_x += point.x();
-            mean_y += point.y();
-        }
-        mean_x /= static_cast<double>(wall_points.size());
-        mean_y /= static_cast<double>(wall_points.size());
-
-        double sxx = 0.0;
-        double sxy = 0.0;
-        for (const auto& point : wall_points) {
-            const double dx = point.x() - mean_x;
-            sxx += dx * dx;
-            sxy += dx * (point.y() - mean_y);
-        }
-        if (std::abs(sxx) > 1e-9) {
-            // 两侧墙点一起参与拟合时，截距会互相抵消，但主方向斜率会保留；
-            // 因此这里不区分左右墙，只估计整体巷道走向。点数不足时保持 yaw=0
-            // 并通过 quality=degraded/lost 告知上层不要强信任该角度。
-            const double slope = sxy / sxx;
-            result.yaw_deg = std::atan(slope) * kRadToDeg;
-            yaw_valid = std::isfinite(result.yaw_deg);
-        }
+    Eigen::Vector2d direction_sum(0.0, 0.0);
+    int direction_count = 0;
+    Eigen::Vector2d direction;
+    if (static_cast<int>(left_wall_points.size()) >= config.min_wall_points &&
+        fitPcaDirection(left_wall_points, direction)) {
+        direction_sum += direction;
+        ++direction_count;
+    }
+    if (static_cast<int>(right_wall_points.size()) >= config.min_wall_points &&
+        fitPcaDirection(right_wall_points, direction)) {
+        direction_sum += direction;
+        ++direction_count;
+    }
+    if (direction_count > 0 && direction_sum.norm() > 1e-6) {
+        const Eigen::Vector2d dir = direction_sum.normalized();
+        result.yaw_deg = std::atan2(dir.y(), dir.x()) * kRadToDeg;
+        yaw_valid = std::isfinite(result.yaw_deg);
+        result.yaw_valid = yaw_valid;
     }
 
     const double front_x =
@@ -174,6 +295,10 @@ EquipmentGeometryResult estimateEquipmentGeometry(
     result.left_rear_points = lr.points;
     result.right_front_points = rf.points;
     result.right_rear_points = rr.points;
+    result.left_front_valid = lf.valid;
+    result.left_rear_valid = lr.valid;
+    result.right_front_valid = rf.valid;
+    result.right_rear_valid = rr.valid;
     result.distances_valid = lf.valid && lr.valid && rf.valid && rr.valid;
     result.attitude_valid = plane_valid || yaw_valid;
     if (plane_valid && yaw_valid && result.distances_valid) {

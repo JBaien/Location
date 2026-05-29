@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdint>
 #include <string>
 
 #include <pcl_conversions/pcl_conversions.h>
@@ -83,6 +84,15 @@ private:
         private_nh_.param("distance_percentile",
                           config_.geometry.distance_percentile,
                           config_.geometry.distance_percentile);
+        private_nh_.param("equipment_half_width_m",
+                          config_.geometry.equipment_half_width_m,
+                          config_.geometry.equipment_half_width_m);
+        private_nh_.param("max_ground_plane_rmse",
+                          config_.geometry.max_ground_plane_rmse,
+                          config_.geometry.max_ground_plane_rmse);
+        private_nh_.param("min_ground_normal_z",
+                          config_.geometry.min_ground_normal_z,
+                          config_.geometry.min_ground_normal_z);
         private_nh_.param("min_ground_points",
                           config_.geometry.min_ground_points,
                           config_.geometry.min_ground_points);
@@ -117,9 +127,17 @@ private:
         out.source = "pointcloud";
         out.attitude_valid = result.attitude_valid;
         out.distances_valid = result.distances_valid;
+        out.roll_valid = result.roll_valid;
+        out.pitch_valid = result.pitch_valid;
+        out.yaw_valid = result.yaw_valid;
+        out.left_front_valid = result.left_front_valid;
+        out.left_rear_valid = result.left_rear_valid;
+        out.right_front_valid = result.right_front_valid;
+        out.right_rear_valid = result.right_rear_valid;
         out.roll_deg = result.roll_deg;
         out.pitch_deg = result.pitch_deg;
         out.yaw_deg = result.yaw_deg;
+        out.ground_plane_rmse = result.ground_plane_rmse;
         out.left_front_mm = result.left_front_mm;
         out.left_rear_mm = result.left_rear_mm;
         out.right_front_mm = result.right_front_mm;
@@ -130,6 +148,7 @@ private:
         out.left_rear_points = result.left_rear_points;
         out.right_front_points = result.right_front_points;
         out.right_rear_points = result.right_rear_points;
+        out.point_count = static_cast<std::uint32_t>(cloud.size());
         out.quality = result.quality;
         pub_.publish(out);
     }

@@ -56,6 +56,9 @@ side_y_abs_max: 5.0
 side_z_min: -1.5
 side_z_max: 1.5
 distance_percentile: 0.1
+equipment_half_width_m: 1.2
+max_ground_plane_rmse: 0.08
+min_ground_normal_z: 0.85
 min_ground_points: 20
 min_wall_points: 20
 min_distance_points: 5
