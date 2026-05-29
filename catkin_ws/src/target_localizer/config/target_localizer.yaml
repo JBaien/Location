@@ -33,3 +33,56 @@ min_good_inliers: 25
 good_residual_rms: 0.015
 lost_after_misses: 3
 hold_duration: 0.3
+
+# 设备姿态/四角距离估计。订阅融合后的 /points_raw，输出 /equipment_state。
+equipment_state_topic: /equipment_state
+ground_x_min: -4.0
+ground_x_max: 4.0
+ground_y_min: -2.5
+ground_y_max: 2.5
+ground_z_min: -2.0
+ground_z_max: 0.5
+wall_x_min: -6.0
+wall_x_max: 6.0
+wall_y_abs_min: 0.8
+wall_y_abs_max: 4.0
+wall_z_min: -1.0
+wall_z_max: 2.5
+front_sample_distance_m: 2.0
+rear_sample_distance_m: 2.0
+sample_window_x_m: 0.4
+side_y_abs_min: 0.2
+side_y_abs_max: 5.0
+side_z_min: -1.5
+side_z_max: 1.5
+distance_percentile: 0.1
+min_ground_points: 20
+min_wall_points: 20
+min_distance_points: 5
+forward_sign: 1
+left_sign: 1
+
+# MODBUS TCP 真实传感器参考值。寄存器地址和缩放系数按现场设备修改。
+modbus:
+  output_topic: /sensor_reference
+  frame_id: base_link
+  rate_hz: 10.0
+  ins:
+    enabled: false
+    host: 192.168.1.20
+    port: 502
+    unit_id: 1
+    timeout_ms: 500
+    roll: {address: 0, scale: 0.01}
+    pitch: {address: 1, scale: 0.01}
+    yaw: {address: 2, scale: 0.01}
+  mmwave:
+    enabled: false
+    host: 192.168.1.21
+    port: 502
+    unit_id: 1
+    timeout_ms: 500
+    left_front: {address: 10, scale: 1.0}
+    left_rear: {address: 11, scale: 1.0}
+    right_front: {address: 12, scale: 1.0}
+    right_rear: {address: 13, scale: 1.0}

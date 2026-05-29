@@ -100,7 +100,7 @@ flowchart LR
   I --> J["圆柱精修\nODR/最小二乘"]
   J --> K["取 z*=z0 处轴线中心点"]
   K --> L["CV-KF + 质量评估"]
-  L --> M["/target_xy /diagnostics /marker"]
+  L --> M["/target_xy /equipment_state /diagnostics /marker"]
 ```
 
 这条链和 PCL 的推荐用法是一致的：`PassThrough` 用于基于字段范围做快速裁剪；`VoxelGrid` 用体素网格下采样并保留体素质心；`StatisticalOutlierRemoval` 通过邻域统计剔除稀疏外点；`NormalEstimation` 计算法向；`EuclideanClusterExtraction` 负责把散乱点云分成候选簇；对平面或支撑结构可先做一次 RANSAC 平面剔除；然后再用带法向约束的圆柱样本一致性模型做粗拟合。PCL 的圆柱示例本身就是“先滤波、估法向、去平面、再分圆柱”，这和你的目标非常匹配。citeturn22view0turn22view1turn22view2turn22view3turn22view4turn24view0turn24view1
@@ -211,27 +211,32 @@ e_{\text{scan,raw}} \approx vT_s
 
 ROS 落地上，建议直接按 ROS1 `catkin` 包组织，但运行时尽量采用 `tf2_ros::Buffer` 与 `tf2_sensor_msgs` 思路来做坐标变换。你给出的静态 tf 示例要**原样进入 launch**，不要再手敲矩阵做二次换算；如果你现场已经有静态 tf 在发布，则直接复用，不要重复发。同样要注意一点：你的 YAML 名称 `LEFT_LiDAR_T_CENTER_LiDAR` 和 `RIGHT_LiDAR_T_CENTER_LiDAR` 与 `static_transform_publisher` 的父子语义在文字上可能会让人混淆，所以**运行时以 tf 树为唯一真值**，不要在业务代码里再单独解释一遍矩阵语义。ROS 的静态 tf 工具本来就是用来固定这种不随时间变化的坐标关系的。citeturn18search0turn6search2
 
-建议的节点结构如下：
+当前仓库的节点结构如下：
 
 | 节点 | 订阅 | 发布 | 职责 |
 |---|---|---|---|
-| `multi_lidar_sync_node` | 3 路 `/points_*` | `/synced_clouds` 或直接内部回调 | 时间同步，预留左右时间偏移校正 |
-| `target_localizer_node` | 3 路 `PointCloud2`、`/tf` | `/target_measurement`、`/target_cloud_roi`、`/target_marker` | tf 变换、去畸变、ROI、聚类、圆柱拟合 |
-| `target_tracker_node` | `/target_measurement` | `/target_xy`、`/target_status` | 卡尔曼滤波、创新门控、状态机 |
-| `diagnostics_node` | `/target_xy`、中间统计量 | `/diagnostics` | 内点数、残差、时延、掉帧统计 |
-| `rviz_debug` | 各调试话题 | 可视化 | 现场调试与回放复核 |
+| `multi_lidar_fusion_node` | 2/3 路 TM16 点云、`/tf` | `/points_raw` | 时间同步、坐标统一、融合点云发布 |
+| `target_localizer_node` | `/points_raw` | `/target_measurement`、`/target_xy`、`/target_cloud_roi`、`/target_marker` | ROI、滤波、圆柱拟合、目标跟踪 |
+| `equipment_state_node` | `/points_raw` | `/equipment_state` | 从当前点云估计俯仰角、横滚角、偏航角和四角距离 |
+| `modbus_sensor_reference_node` | MODBUS TCP | `/sensor_reference` | 接入惯导和 4 路毫米波真实参考值 |
+| `mine_web_bridge_node` | 点云、路径、`/equipment_state`、`/sensor_reference` | WebSocket | 浏览器驾驶舱的数据桥接 |
 
 配套的话题建议如下：
 
 | 话题 | 类型 | 说明 |
 |---|---|---|
-| `/velodyne_points` | `sensor_msgs/PointCloud2` | 中心雷达原始点云 |
-| `/left_points` | `sensor_msgs/PointCloud2` | 左倾斜雷达原始点云 |
-| `/right_points` | `sensor_msgs/PointCloud2` | 右倾斜雷达原始点云 |
+| `/points_raw` | `sensor_msgs/PointCloud2` | 三雷达融合后的统一点云，定位节点默认订阅它 |
 | `/target_measurement` | 自定义 `TargetMeasurement.msg` | 原始测量值、残差、内点数、协方差 |
 | `/target_xy` | 自定义 `TargetXY.msg` | 最终输出的 \(\Delta X,\Delta Y\) 与状态 |
+| `/equipment_state` | 自定义 `EquipmentState.msg` | 点云计算出的姿态角和左前、左后、右前、右后距离 |
+| `/sensor_reference` | 自定义 `EquipmentState.msg` | MODBUS TCP 接入的惯导和 4 路毫米波真实值 |
 | `/target_marker` | `visualization_msgs/Marker` | 圆柱轴线与中心点可视化 |
 | `/diagnostics` | `diagnostic_msgs/DiagnosticArray` | 质量评估 |
+
+`equipment_state_node` 的四角距离通过 `front_sample_distance_m` 和
+`rear_sample_distance_m` 配置前/后测量截面；`forward_sign` 和 `left_sign`
+用于适配现场坐标方向。Web 驾驶舱左侧显示 `/equipment_state` 的点云计算值，
+右侧显示 `/sensor_reference` 的真实传感器值，两路数据不互相覆盖。
 
 静态 tf 的 launch 片段建议直接写成这样：
 
@@ -320,7 +325,7 @@ void TargetLocalizer::callback(
 | 代码包 | `target_localizer` ROS1 `catkin` 包源码 | 直接编译运行 |
 | Launch | `bringup.launch`、`offline_replay.launch` | 一键上线与一键回放 |
 | 配置 | `target_localizer.yaml`、`extrinsics.yaml`、`roi.yaml` | 明确所有可调参数和默认值 |
-| 消息定义 | `TargetMeasurement.msg`、`TargetXY.msg` | 固化接口，方便上层调用 |
+| 消息定义 | `TargetMeasurement.msg`、`TargetXY.msg`、`EquipmentState.msg` | 固化接口，方便上层调用 |
 | 测试数据 | 至少 3 组 rosbag：静态、动态、遮挡 | 复现与 regression test |
 | 可视化 | RViz 配置、Marker 发布 | 现场联调 |
 | 评估脚本 | `eval_xy.py`、CSV 导出、误差统计图 | 量化验收 |

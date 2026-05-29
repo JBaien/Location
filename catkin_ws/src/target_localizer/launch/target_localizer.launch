@@ -8,4 +8,18 @@
         output="screen">
     <rosparam file="$(arg config)" command="load"/>
   </node>
+
+  <node pkg="target_localizer"
+        type="equipment_state_node"
+        name="equipment_state_node"
+        output="screen">
+    <rosparam file="$(arg config)" command="load"/>
+  </node>
+
+  <node pkg="target_localizer"
+        type="modbus_sensor_reference_node"
+        name="modbus_sensor_reference_node"
+        output="screen">
+    <rosparam file="$(arg config)" command="load" ns="modbus"/>
+  </node>
 </launch>

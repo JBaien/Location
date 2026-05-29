@@ -8,6 +8,9 @@ web_viewer:
     path: /slam/global_path
     odom: /slam/global_odom
     odom_fallback: /Odometry
+    equipment_state: /equipment_state
+    sensor_reference: /sensor_reference
+    target_xy: /target_xy
   current_cloud:
     send_rate_hz: 2.0
     voxel_size_m: 0.15

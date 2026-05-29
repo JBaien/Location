@@ -10,6 +10,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   sensor_msgs
   std_msgs
+  target_localizer
 )
 
 find_package(Boost REQUIRED COMPONENTS system thread)
@@ -17,7 +18,7 @@ find_package(OpenSSL REQUIRED)
 
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS nav_msgs roscpp sensor_msgs std_msgs
+  CATKIN_DEPENDS nav_msgs roscpp sensor_msgs std_msgs target_localizer
 )
 
 include_directories(
@@ -56,4 +57,3 @@ install(TARGETS mine_slam_web_lib mine_web_bridge_node
 install(DIRECTORY config launch
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )
-

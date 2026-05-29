@@ -15,11 +15,13 @@ find_package(catkin REQUIRED COMPONENTS
   visualization_msgs
 )
 
+find_package(Boost REQUIRED COMPONENTS system)
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
 
 add_message_files(
   FILES
+  EquipmentState.msg
   TargetMeasurement.msg
   TargetXY.msg
 )
@@ -50,10 +52,12 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
+  ${Boost_INCLUDE_DIRS}
 )
 
 add_library(target_localizer_core
   src/cylinder_geometry.cpp
+  src/equipment_geometry.cpp
   src/target_tracker.cpp
 )
 add_dependencies(target_localizer_core
@@ -78,7 +82,33 @@ target_link_libraries(target_localizer_node
   ${PCL_LIBRARIES}
 )
 
-install(TARGETS target_localizer_core target_localizer_node
+add_executable(equipment_state_node
+  src/equipment_state_node.cpp
+)
+add_dependencies(equipment_state_node
+  target_localizer_core
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+target_link_libraries(equipment_state_node
+  target_localizer_core
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+)
+
+add_executable(modbus_sensor_reference_node
+  src/modbus_sensor_reference_node.cpp
+)
+add_dependencies(modbus_sensor_reference_node
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+target_link_libraries(modbus_sensor_reference_node
+  ${catkin_LIBRARIES}
+  ${Boost_LIBRARIES}
+)
+
+install(TARGETS target_localizer_core target_localizer_node equipment_state_node modbus_sensor_reference_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

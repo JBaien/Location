@@ -16,6 +16,8 @@
 #include <rosgraph_msgs/Clock.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <std_msgs/String.h>
+#include <target_localizer/EquipmentState.h>
+#include <target_localizer/TargetXY.h>
 
 #include "mine_slam_web/pointcloud_encoder.h"
 #include "mine_slam_web/websocket_server.h"
@@ -61,6 +63,41 @@ struct ProgressiveRevealState {
   int filter_front_unrevealed_point_count = 0;
   int published_face_point_count = 0;
   std::string reveal_source = "unknown";
+};
+
+struct EquipmentStateSnapshot {
+  bool seen = false;
+  bool attitude_valid = false;
+  bool distances_valid = false;
+  double roll_deg = 0.0;
+  double pitch_deg = 0.0;
+  double yaw_deg = 0.0;
+  double left_front_mm = 0.0;
+  double left_rear_mm = 0.0;
+  double right_front_mm = 0.0;
+  double right_rear_mm = 0.0;
+  int ground_points = 0;
+  int wall_points = 0;
+  int left_front_points = 0;
+  int left_rear_points = 0;
+  int right_front_points = 0;
+  int right_rear_points = 0;
+  std::string quality = "lost";
+  std::string source = "none";
+  std::uint64_t stamp_ns = 0;
+};
+
+struct TargetXySnapshot {
+  bool seen = false;
+  double center_x_mm = 0.0;
+  double center_y_mm = 0.0;
+  double dx_mm = 0.0;
+  double dy_mm = 0.0;
+  double velocity_x_mm_s = 0.0;
+  double velocity_y_mm_s = 0.0;
+  int status = 0;
+  std::string status_text = "lost";
+  std::uint64_t stamp_ns = 0;
 };
 
 enum class OdomSource {
@@ -117,6 +154,18 @@ class MineWebBridgeNode {
       progressive_reveal_sub_ =
           nh_.subscribe(progressive_reveal_topic_, 10, &MineWebBridgeNode::progressiveRevealCallback, this);
     }
+    if (!equipment_state_topic_.empty()) {
+      equipment_state_sub_ =
+          nh_.subscribe(equipment_state_topic_, 20, &MineWebBridgeNode::equipmentStateCallback, this);
+    }
+    if (!sensor_reference_topic_.empty()) {
+      sensor_reference_sub_ =
+          nh_.subscribe(sensor_reference_topic_, 20, &MineWebBridgeNode::sensorReferenceCallback, this);
+    }
+    if (!target_xy_topic_.empty()) {
+      target_xy_sub_ =
+          nh_.subscribe(target_xy_topic_, 20, &MineWebBridgeNode::targetXyCallback, this);
+    }
     odom_sub_ = nh_.subscribe(odom_topic_, 50, &MineWebBridgeNode::preferredOdomCallback, this);
     odom_fallback_sub_ = nh_.subscribe(odom_fallback_topic_, 50, &MineWebBridgeNode::fallbackOdomCallback, this);
     clock_sub_ = nh_.subscribe("/clock", 10, &MineWebBridgeNode::clockCallback, this);
@@ -128,6 +177,9 @@ class MineWebBridgeNode {
                     << ", stable=" << stable_map_topic_
                     << ", path=" << path_topic_
                     << ", progressive=" << progressive_reveal_topic_
+                    << ", equipment=" << equipment_state_topic_
+                    << ", reference=" << sensor_reference_topic_
+                    << ", target_xy=" << target_xy_topic_
                     << ", odom=" << odom_topic_
                     << ", fallback=" << odom_fallback_topic_);
   }
@@ -147,6 +199,12 @@ class MineWebBridgeNode {
     nh_.param<std::string>("web_viewer/topics/path", path_topic_, "/slam/global_path");
     nh_.param<std::string>("web_viewer/topics/progressive_reveal_diagnostics",
                            progressive_reveal_topic_, "/sim/progressive_reveal_diagnostics");
+    nh_.param<std::string>("web_viewer/topics/equipment_state",
+                           equipment_state_topic_, "/equipment_state");
+    nh_.param<std::string>("web_viewer/topics/sensor_reference",
+                           sensor_reference_topic_, "/sensor_reference");
+    nh_.param<std::string>("web_viewer/topics/target_xy",
+                           target_xy_topic_, "/target_xy");
     nh_.param<std::string>("web_viewer/topics/odom", odom_topic_, "/slam/global_odom");
     nh_.param<std::string>("web_viewer/topics/odom_fallback", odom_fallback_topic_, "/Odometry");
     nh_.param<double>("web_viewer/current_cloud/send_rate_hz", current_rate_hz_, 2.0);
@@ -356,6 +414,56 @@ class MineWebBridgeNode {
     state.reveal_source = jsonString(msg->data, "reveal_source", "unknown");
     std::lock_guard<std::mutex> lock(state_mutex_);
     progressive_reveal_ = state;
+  }
+
+  static EquipmentStateSnapshot snapshotFromEquipmentMsg(const target_localizer::EquipmentState& msg) {
+    EquipmentStateSnapshot snapshot;
+    snapshot.seen = true;
+    snapshot.attitude_valid = msg.attitude_valid;
+    snapshot.distances_valid = msg.distances_valid;
+    snapshot.roll_deg = msg.roll_deg;
+    snapshot.pitch_deg = msg.pitch_deg;
+    snapshot.yaw_deg = msg.yaw_deg;
+    snapshot.left_front_mm = msg.left_front_mm;
+    snapshot.left_rear_mm = msg.left_rear_mm;
+    snapshot.right_front_mm = msg.right_front_mm;
+    snapshot.right_rear_mm = msg.right_rear_mm;
+    snapshot.ground_points = static_cast<int>(msg.ground_points);
+    snapshot.wall_points = static_cast<int>(msg.wall_points);
+    snapshot.left_front_points = static_cast<int>(msg.left_front_points);
+    snapshot.left_rear_points = static_cast<int>(msg.left_rear_points);
+    snapshot.right_front_points = static_cast<int>(msg.right_front_points);
+    snapshot.right_rear_points = static_cast<int>(msg.right_rear_points);
+    snapshot.quality = msg.quality;
+    snapshot.source = msg.source;
+    snapshot.stamp_ns = stampNs(msg.header.stamp);
+    return snapshot;
+  }
+
+  void equipmentStateCallback(const target_localizer::EquipmentStateConstPtr& msg) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    cloud_equipment_ = snapshotFromEquipmentMsg(*msg);
+  }
+
+  void sensorReferenceCallback(const target_localizer::EquipmentStateConstPtr& msg) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    sensor_reference_ = snapshotFromEquipmentMsg(*msg);
+  }
+
+  void targetXyCallback(const target_localizer::TargetXYConstPtr& msg) {
+    TargetXySnapshot snapshot;
+    snapshot.seen = true;
+    snapshot.center_x_mm = msg->center_x * 1000.0;
+    snapshot.center_y_mm = msg->center_y * 1000.0;
+    snapshot.dx_mm = msg->dx * 1000.0;
+    snapshot.dy_mm = msg->dy * 1000.0;
+    snapshot.velocity_x_mm_s = msg->velocity_x * 1000.0;
+    snapshot.velocity_y_mm_s = msg->velocity_y * 1000.0;
+    snapshot.status = static_cast<int>(msg->status);
+    snapshot.status_text = msg->status_text;
+    snapshot.stamp_ns = stampNs(msg->header.stamp);
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    target_xy_ = snapshot;
   }
 
   void clockCallback(const rosgraph_msgs::ClockConstPtr& msg) {
@@ -574,6 +682,9 @@ class MineWebBridgeNode {
     double path_odom_span_s = 0.0;
     bool path_snapshot_complete = false;
     ProgressiveRevealState progressive;
+    EquipmentStateSnapshot cloud_equipment;
+    EquipmentStateSnapshot sensor_reference;
+    TargetXySnapshot target_xy;
     {
       std::lock_guard<std::mutex> lock(state_mutex_);
       pose = pose_;
@@ -605,6 +716,9 @@ class MineWebBridgeNode {
       path_reset_count = path_reset_count_;
       last_path_reset_reason = last_path_reset_reason_;
       progressive = progressive_reveal_;
+      cloud_equipment = cloud_equipment_;
+      sensor_reference = sensor_reference_;
+      target_xy = target_xy_;
     }
 
     std::ostringstream json;
@@ -691,9 +805,59 @@ class MineWebBridgeNode {
     json << "\"progressive_hidden_unrevealed_point_count\":" << progressive.hidden_unrevealed_point_count << ",";
     json << "\"progressive_filter_front_unrevealed_point_count\":" << progressive.filter_front_unrevealed_point_count << ",";
     json << "\"progressive_published_face_point_count\":" << progressive.published_face_point_count << ",";
-    json << "\"progressive_reveal_source\":\"" << progressive.reveal_source << "\"";
+    json << "\"progressive_reveal_source\":\"" << progressive.reveal_source << "\",";
+    appendEquipmentJson(json, "cloud_estimate", cloud_equipment);
+    json << ",";
+    appendEquipmentJson(json, "real_sensors", sensor_reference);
+    json << ",";
+    appendTargetXyJson(json, target_xy);
     json << "}";
     return json.str();
+  }
+
+  static void appendEquipmentJson(std::ostringstream& json,
+                                  const std::string& key,
+                                  const EquipmentStateSnapshot& state) {
+    json << "\"" << key << "\":{";
+    json << "\"seen\":" << (state.seen ? "true" : "false") << ",";
+    json << "\"source\":\"" << state.source << "\",";
+    json << "\"quality\":\"" << state.quality << "\",";
+    json << "\"stamp_ns\":" << state.stamp_ns << ",";
+    json << "\"attitude\":{";
+    json << "\"valid\":" << (state.attitude_valid ? "true" : "false") << ",";
+    json << "\"roll_deg\":" << state.roll_deg << ",";
+    json << "\"pitch_deg\":" << state.pitch_deg << ",";
+    json << "\"yaw_deg\":" << state.yaw_deg << ",";
+    json << "\"ground_points\":" << state.ground_points << ",";
+    json << "\"wall_points\":" << state.wall_points;
+    json << "},";
+    json << "\"distances\":{";
+    json << "\"valid\":" << (state.distances_valid ? "true" : "false") << ",";
+    json << "\"left_front_mm\":" << state.left_front_mm << ",";
+    json << "\"left_rear_mm\":" << state.left_rear_mm << ",";
+    json << "\"right_front_mm\":" << state.right_front_mm << ",";
+    json << "\"right_rear_mm\":" << state.right_rear_mm << ",";
+    json << "\"left_front_points\":" << state.left_front_points << ",";
+    json << "\"left_rear_points\":" << state.left_rear_points << ",";
+    json << "\"right_front_points\":" << state.right_front_points << ",";
+    json << "\"right_rear_points\":" << state.right_rear_points;
+    json << "}}";
+  }
+
+  static void appendTargetXyJson(std::ostringstream& json,
+                                 const TargetXySnapshot& state) {
+    json << "\"target_xy\":{";
+    json << "\"seen\":" << (state.seen ? "true" : "false") << ",";
+    json << "\"stamp_ns\":" << state.stamp_ns << ",";
+    json << "\"center_x_mm\":" << state.center_x_mm << ",";
+    json << "\"center_y_mm\":" << state.center_y_mm << ",";
+    json << "\"dx_mm\":" << state.dx_mm << ",";
+    json << "\"dy_mm\":" << state.dy_mm << ",";
+    json << "\"velocity_x_mm_s\":" << state.velocity_x_mm_s << ",";
+    json << "\"velocity_y_mm_s\":" << state.velocity_y_mm_s << ",";
+    json << "\"status\":" << state.status << ",";
+    json << "\"status_text\":\"" << state.status_text << "\"";
+    json << "}";
   }
 
   void statusTimerCallback(const ros::TimerEvent&) {
@@ -761,6 +925,9 @@ class MineWebBridgeNode {
   ros::Subscriber stable_sub_;
   ros::Subscriber path_sub_;
   ros::Subscriber progressive_reveal_sub_;
+  ros::Subscriber equipment_state_sub_;
+  ros::Subscriber sensor_reference_sub_;
+  ros::Subscriber target_xy_sub_;
   ros::Subscriber odom_sub_;
   ros::Subscriber odom_fallback_sub_;
   ros::Subscriber clock_sub_;
@@ -770,6 +937,9 @@ class MineWebBridgeNode {
   std::string stable_map_topic_ = "/slam/stable_map";
   std::string path_topic_ = "/slam/global_path";
   std::string progressive_reveal_topic_ = "/sim/progressive_reveal_diagnostics";
+  std::string equipment_state_topic_ = "/equipment_state";
+  std::string sensor_reference_topic_ = "/sensor_reference";
+  std::string target_xy_topic_ = "/target_xy";
   std::string odom_topic_ = "/slam/global_odom";
   std::string odom_fallback_topic_ = "/Odometry";
   double current_rate_hz_ = 2.0;
@@ -808,6 +978,9 @@ class MineWebBridgeNode {
   std::vector<PathPoint> path_;
   std::vector<PathPoint> path_snapshot_;
   ProgressiveRevealState progressive_reveal_;
+  EquipmentStateSnapshot cloud_equipment_;
+  EquipmentStateSnapshot sensor_reference_;
+  TargetXySnapshot target_xy_;
   std::string map_frame_ = "map";
   std::string path_frame_;
   std::string path_snapshot_frame_;

@@ -1,3 +1,29 @@
+export interface EquipmentMetricState {
+  seen: boolean;
+  source: string;
+  quality: string;
+  stamp_ns: number;
+  attitude: {
+    valid: boolean;
+    roll_deg: number;
+    pitch_deg: number;
+    yaw_deg: number;
+    ground_points: number;
+    wall_points: number;
+  };
+  distances: {
+    valid: boolean;
+    left_front_mm: number;
+    left_rear_mm: number;
+    right_front_mm: number;
+    right_rear_mm: number;
+    left_front_points: number;
+    left_rear_points: number;
+    right_front_points: number;
+    right_rear_points: number;
+  };
+}
+
 export interface ViewerStatus {
   connected: boolean;
   cloud_clients: number;
@@ -55,6 +81,20 @@ export interface ViewerStatus {
   progressive_filter_front_unrevealed_point_count?: number;
   progressive_published_face_point_count?: number;
   progressive_reveal_source?: string;
+  cloud_estimate?: EquipmentMetricState;
+  real_sensors?: EquipmentMetricState;
+  target_xy?: {
+    seen: boolean;
+    stamp_ns: number;
+    center_x_mm: number;
+    center_y_mm: number;
+    dx_mm: number;
+    dy_mm: number;
+    velocity_x_mm_s: number;
+    velocity_y_mm_s: number;
+    status: number;
+    status_text: string;
+  };
 }
 
 export class StatusClient {

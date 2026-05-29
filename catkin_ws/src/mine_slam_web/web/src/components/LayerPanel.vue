@@ -13,7 +13,7 @@ function update(key: VisibleLayer, value: boolean, layers: LayerState) {
 
 <template>
   <section class="panel-section">
-    <h2>Display</h2>
+    <h2>图层显示</h2>
     <label class="check-row">
       <input type="checkbox" :checked="layers.path" @change="update('path', ($event.target as HTMLInputElement).checked, layers)" />
       <span>轨迹</span>

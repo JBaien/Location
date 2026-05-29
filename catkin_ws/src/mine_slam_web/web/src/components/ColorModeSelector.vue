@@ -5,20 +5,20 @@ defineProps<{ mode: ColorMode }>();
 const emit = defineEmits<{ change: [mode: ColorMode] }>();
 
 const modes: Array<{ value: ColorMode; label: string }> = [
-  { value: 'height', label: 'Height' },
-  { value: 'intensity', label: 'Intensity' },
-  { value: 'x-distance', label: 'X distance' },
-  { value: 'y-distance', label: 'Y distance' },
-  { value: 'z-distance', label: 'Z distance' },
-  { value: 'lidar_id', label: 'LiDAR ID' },
-  { value: 'stable-temporary', label: 'Stable / temporary' },
-  { value: 'reflector', label: 'Reflector' }
+  { value: 'height', label: '高度' },
+  { value: 'intensity', label: '强度' },
+  { value: 'x-distance', label: 'X距离' },
+  { value: 'y-distance', label: 'Y距离' },
+  { value: 'z-distance', label: 'Z距离' },
+  { value: 'lidar_id', label: '雷达编号' },
+  { value: 'stable-temporary', label: '地图/实时' },
+  { value: 'reflector', label: '反光点' }
 ];
 </script>
 
 <template>
   <section class="panel-section">
-    <h2>Color</h2>
+    <h2>渲染方式</h2>
     <select class="select" :value="mode" @change="emit('change', ($event.target as HTMLSelectElement).value as ColorMode)">
       <option v-for="item in modes" :key="item.value" :value="item.value">{{ item.label }}</option>
     </select>
