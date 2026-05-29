@@ -69,6 +69,22 @@ Web 页面采用左右双路数据显示：左侧显示点云计算值，右侧�
 docker/runtime/lidar_fusion/multi_lidar_fusion.yaml
 ```
 
+三雷达 TF 外参关系不在融合 YAML 中，而是在 Docker 挂载 launch 中修改：
+
+```text
+docker/runtime/launch/lidar_static_tf.launch
+```
+
+Docker 启动时该文件会挂载为 `/config/launch/lidar_static_tf.launch` 并由 `bringup.launch` 自动加载。现场修改雷达安装外参时，只需要改这个文件中的 3 行 `static_transform_publisher`：
+
+```xml
+args="x y z yaw pitch roll base_link lidar1"
+args="x y z yaw pitch roll lidar1 lidar2"
+args="x y z yaw pitch roll lidar1 lidar3"
+```
+
+其中 `x/y/z` 单位为米，`yaw/pitch/roll` 单位为弧度，顺序必须保持为 `x y z yaw pitch roll parent_frame child_frame`。修改后重启容器使 TF 生效。
+
 圆柱标靶定位、设备姿态、四角距离和 MODBUS TCP 参数：
 
 ```text
@@ -89,7 +105,7 @@ left_sign: 1
 
 ## TCP 惯导与毫米波雷达配置
 
-惯导和毫米波雷达真实值由 `modbus_sensor_reference_node` 通过 MODBUS TCP 读取，并统一发布到 `/sensor_reference`。Docker 部署时只需要修改外挂配置：
+惯导和毫米波雷达真实值由 `modbus_sensor_reference_node` 通过 MODBUS TCP 读取，并统一发布到 `/sensor_reference`。现场惯导和毫米波雷达使用同一个 TCP 设备 IP；Docker 部署后可直接修改挂载到容器内的外挂 YAML，无需重建镜像。
 
 ```text
 docker/runtime/target_localizer/target_localizer.yaml
@@ -101,14 +117,14 @@ docker/runtime/target_localizer/target_localizer.yaml
 catkin_ws/src/target_localizer/config/target_localizer.yaml
 ```
 
-`modbus.ins` 是惯导 TCP 配置，`modbus.mmwave` 是 4 路毫米波雷达 TCP 配置。把 `enabled` 改为 `true`，并将 `host` 改成现场设备 IP：
+`modbus.host` 和 `modbus.port` 是现场 TCP 设备的共用 IP 和端口，惯导和 4 路毫米波雷达都使用这两项。部署时只需要改这一处 IP/端口，再把需要接入的 `enabled` 改为 `true`：
 
 ```yaml
 modbus:
+  host: 192.168.1.20     # 现场 TCP 设备 IP，只需要改这一处
+  port: 502              # 现场 TCP 端口，惯导和毫米波共用
   ins:
     enabled: true
-    host: 192.168.1.20   # 惯导设备 IP
-    port: 502            # MODBUS TCP 端口，通常为 502
     unit_id: 1           # 从站 ID
     timeout_ms: 500
     roll: {address: 0, scale: 0.01}
@@ -116,8 +132,6 @@ modbus:
     yaw: {address: 2, scale: 0.01}
   mmwave:
     enabled: true
-    host: 192.168.1.21   # 毫米波雷达控制器或网关 IP
-    port: 502
     unit_id: 1
     timeout_ms: 500
     left_front: {address: 10, scale: 1.0}
@@ -128,13 +142,13 @@ modbus:
 
 字段说明：
 
-- `host`：TCP 设备 IP 地址。惯导和毫米波可以是不同 IP，也可以是同一个网关 IP。
-- `port`：MODBUS TCP 端口，常用 `502`，按设备手册修改。
+- `host`：TCP 设备 IP 地址。当前现场方案中惯导和毫米波共用 `modbus.host`，因此现场换 IP 时只修改这一项。
+- `port`：MODBUS TCP 端口，常用 `502`。当前现场方案中惯导和毫米波共用 `modbus.port`，因此现场换端口时只修改这一项。
 - `unit_id`：MODBUS 从站 ID；多设备挂在同一网关时需要分别配置。
 - `address`：寄存器地址，必须按现场设备协议表填写。
 - `scale`：寄存器原始值到显示值的换算系数。例如惯导角度原始值为 1234、`scale: 0.01` 时，显示为 12.34 度；毫米波距离通常按毫米输出，可使用 `scale: 1.0`。
 
-修改 Docker 外挂 YAML 后重启运行容器使配置生效：
+Docker 运行时会挂载 `docker/runtime/target_localizer/target_localizer.yaml` 到容器配置目录。部署后可以在宿主机直接编辑这个文件，修改 TCP IP、端口、从站 ID、寄存器地址和缩放系数；保存后重启运行容器使配置生效：
 
 ```bash
 docker compose -f docker/docker-compose.yml restart mine-lidar-runtime

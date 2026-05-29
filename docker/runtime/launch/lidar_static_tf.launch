@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    三雷达静态外参配置，Docker 部署后可直接修改本挂载文件。
+
+    参数顺序：
+      x y z yaw pitch roll parent_frame child_frame
+
+    单位：
+      x/y/z 使用米，yaw/pitch/roll 使用弧度。
+
+    默认 TF 关系：
+      base_link -> lidar1
+      lidar1    -> lidar2
+      lidar1    -> lidar3
+
+    将下面 3 行 args 中的 0 0 0 0 0 0 替换为现场标定后的实测外参。
+  -->
+  <node pkg="tf2_ros"
+        type="static_transform_publisher"
+        name="base_to_lidar1"
+        args="0 0 0 0 0 0 base_link lidar1" />
+
+  <node pkg="tf2_ros"
+        type="static_transform_publisher"
+        name="lidar1_to_lidar2"
+        args="0 0 0 0 0 0 lidar1 lidar2" />
+
+  <node pkg="tf2_ros"
+        type="static_transform_publisher"
+        name="lidar1_to_lidar3"
+        args="0 0 0 0 0 0 lidar1 lidar3" />
+</launch>

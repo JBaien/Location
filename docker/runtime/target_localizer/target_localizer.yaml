@@ -65,10 +65,10 @@ modbus:
   output_topic: /sensor_reference
   frame_id: base_link
   rate_hz: 10.0
+  host: 192.168.1.20
+  port: 502
   ins:
     enabled: false
-    host: 192.168.1.20
-    port: 502
     unit_id: 1
     timeout_ms: 500
     roll: {address: 0, scale: 0.01}
@@ -76,8 +76,6 @@ modbus:
     yaw: {address: 2, scale: 0.01}
   mmwave:
     enabled: false
-    host: 192.168.1.21
-    port: 502
     unit_id: 1
     timeout_ms: 500
     left_front: {address: 10, scale: 1.0}

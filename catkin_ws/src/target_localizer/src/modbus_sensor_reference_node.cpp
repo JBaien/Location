@@ -144,6 +144,14 @@ private:
         private_nh_.param("output_topic", output_topic_, output_topic_);
         private_nh_.param("frame_id", frame_id_, frame_id_);
         private_nh_.param("rate_hz", rate_hz_, rate_hz_);
+        std::string shared_host = ins_.host;
+        private_nh_.param("host", shared_host, shared_host);
+        ins_.host = shared_host;
+        radar_.host = shared_host;
+        int shared_port = ins_.port;
+        private_nh_.param("port", shared_port, shared_port);
+        ins_.port = shared_port;
+        radar_.port = shared_port;
         loadDevice("ins", ins_);
         loadDevice("mmwave", radar_);
         loadRegister("ins/roll", roll_);

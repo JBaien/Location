@@ -8,6 +8,7 @@
   <arg name="enable_record" default="false"/>
 
   <arg name="driver_launch" default="/config/launch/driver_tm16_multi3.launch"/>
+  <arg name="lidar_tf_launch" default="/config/launch/lidar_static_tf.launch"/>
   <arg name="fusion_config" default="/config/lidar_fusion/multi_lidar_fusion.yaml"/>
   <arg name="target_config" default="/config/target_localizer/target_localizer.yaml"/>
   <arg name="web_config" default="/config/web/web_viewer.yaml"/>
@@ -18,13 +19,10 @@
   </group>
 
   <group if="$(arg enable_fusion)">
+    <include file="$(arg lidar_tf_launch)"/>
     <include file="$(find lidar_fusion)/launch/multi_lidar_fusion.launch">
       <arg name="config" value="$(arg fusion_config)"/>
-      <arg name="publish_static_tf" value="true"/>
-      <!-- Replace these with measured extrinsics after lidar-lidar calibration. -->
-      <arg name="base_to_lidar1_xyz_ypr" value="0 0 0 0 0 0"/>
-      <arg name="lidar1_to_lidar2_xyz_ypr" value="0 0 0 0 0 0"/>
-      <arg name="lidar1_to_lidar3_xyz_ypr" value="0 0 0 0 0 0"/>
+      <arg name="publish_static_tf" value="false"/>
     </include>
   </group>
 
