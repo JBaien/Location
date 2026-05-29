@@ -175,9 +175,7 @@ private:
 
         EquipmentState out;
         out.header = working_msg.header;
-        out.header.frame_id = config_.target_frame.empty()
-                                  ? msg->header.frame_id
-                                  : config_.target_frame;
+        out.header.frame_id = working_msg.header.frame_id;
         out.source = "pointcloud";
         out.attitude_valid = result.attitude_valid;
         out.distances_valid = result.distances_valid;

@@ -163,6 +163,8 @@ min_total_points: 100
 
 惯导和毫米波雷达真实值由 `modbus_sensor_reference_node` 通过 MODBUS TCP 读取，并统一发布到 `/sensor_reference`。现场惯导和毫米波雷达使用同一个 TCP 设备 IP；Docker 部署后可直接修改挂载到容器内的外挂 YAML，无需重建镜像。
 
+`/sensor_reference` 复用 `EquipmentState` 消息，状态语义与 `/equipment_state` 保持一致：启用的惯导和毫米波都读取成功时为 `OK`；部分启用传感器读取成功时为 `DEGRADED`；全部读取失败为 `LOST`。未启用的单项使用 `SENSOR_DISABLED`，TCP 读取失败使用 `TCP_READ_FAILED`。
+
 ```text
 docker/runtime/target_localizer/target_localizer.yaml
 ```

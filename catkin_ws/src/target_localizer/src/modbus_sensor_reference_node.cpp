@@ -178,6 +178,30 @@ private:
                                            max_addr - min_addr + 1, regs);
     }
 
+    static void setAttitudeQuality(EquipmentState& state,
+                                   const std::string& quality,
+                                   const std::string& reason) {
+        state.roll_quality = quality;
+        state.pitch_quality = quality;
+        state.yaw_quality = quality;
+        state.roll_invalid_reason = reason;
+        state.pitch_invalid_reason = reason;
+        state.yaw_invalid_reason = reason;
+    }
+
+    static void setDistanceQuality(EquipmentState& state,
+                                   const std::string& quality,
+                                   const std::string& reason) {
+        state.left_front_quality = quality;
+        state.left_rear_quality = quality;
+        state.right_front_quality = quality;
+        state.right_rear_quality = quality;
+        state.left_front_invalid_reason = reason;
+        state.left_rear_invalid_reason = reason;
+        state.right_front_invalid_reason = reason;
+        state.right_rear_invalid_reason = reason;
+    }
+
     void timerCallback(const ros::TimerEvent&) {
         EquipmentState state;
         state.header.stamp = ros::Time::now();
@@ -185,8 +209,11 @@ private:
         state.source = "modbus_tcp";
         state.quality = "LOST";
         state.overall_status = "LOST";
+        setAttitudeQuality(state, "INVALID", "SENSOR_DISABLED");
+        setDistanceQuality(state, "INVALID", "SENSOR_DISABLED");
 
-        bool any_valid = false;
+        bool ins_valid = false;
+        bool radar_valid = false;
         bool read_failed = false;
         if (ins_enabled_) {
             std::vector<std::uint16_t> regs;
@@ -199,14 +226,10 @@ private:
                 state.roll_valid = true;
                 state.pitch_valid = true;
                 state.yaw_valid = true;
-                state.roll_quality = "OK";
-                state.pitch_quality = "OK";
-                state.yaw_quality = "OK";
-                state.roll_invalid_reason = "none";
-                state.pitch_invalid_reason = "none";
-                state.yaw_invalid_reason = "none";
-                any_valid = true;
+                setAttitudeQuality(state, "OK", "none");
+                ins_valid = true;
             } else {
+                setAttitudeQuality(state, "INVALID", "TCP_READ_FAILED");
                 read_failed = true;
             }
         }
@@ -229,25 +252,34 @@ private:
                 state.left_rear_valid = true;
                 state.right_front_valid = true;
                 state.right_rear_valid = true;
-                state.left_front_quality = "OK";
-                state.left_rear_quality = "OK";
-                state.right_front_quality = "OK";
-                state.right_rear_quality = "OK";
-                state.left_front_invalid_reason = "none";
-                state.left_rear_invalid_reason = "none";
-                state.right_front_invalid_reason = "none";
-                state.right_rear_invalid_reason = "none";
-                any_valid = true;
+                setDistanceQuality(state, "OK", "none");
+                radar_valid = true;
             } else {
+                setDistanceQuality(state, "INVALID", "TCP_READ_FAILED");
                 read_failed = true;
             }
         }
         if (read_failed) {
             sensor_client_.close();
         }
-        state.quality = any_valid ? "OK" : "LOST";
-        state.overall_status = state.quality;
-        state.invalid_reason = any_valid ? "none" : "TCP_READ_FAILED";
+        const bool any_enabled = ins_enabled_ || radar_enabled_;
+        const bool any_valid = ins_valid || radar_valid;
+        const bool all_enabled_valid =
+            (!ins_enabled_ || ins_valid) && (!radar_enabled_ || radar_valid);
+        if (!any_enabled) {
+            state.overall_status = "LOST";
+            state.invalid_reason = "SENSOR_DISABLED";
+        } else if (all_enabled_valid) {
+            state.overall_status = "OK";
+            state.invalid_reason = "none";
+        } else if (any_valid) {
+            state.overall_status = "DEGRADED";
+            state.invalid_reason = "TCP_READ_FAILED";
+        } else {
+            state.overall_status = "LOST";
+            state.invalid_reason = "TCP_READ_FAILED";
+        }
+        state.quality = state.overall_status;
         pub_.publish(state);
     }
 

@@ -66,6 +66,13 @@ function badgeClass(valid: boolean | undefined): string {
   return valid ? 'online' : 'offline';
 }
 
+function statusBadgeClass(value: string | undefined): string {
+  if (!value) return 'unknown';
+  if (value === 'OK' || value === 'good') return 'online';
+  if (value === 'DEGRADED' || value === 'degraded') return 'unknown';
+  return 'offline';
+}
+
 function qualityText(value: string | undefined): string {
   const map: Record<string, string> = {
     OK: '正常',
@@ -153,6 +160,7 @@ function emptyMetric(): EquipmentMetricState {
 
 const cloudMetric = computed(() => status.value?.cloud_estimate ?? emptyMetric());
 const realMetric = computed(() => status.value?.real_sensors ?? emptyMetric());
+const cloudOverallStatus = computed(() => cloudMetric.value.overall_status ?? cloudMetric.value.quality);
 
 function updateClock(): void {
   currentTime.value = new Date().toLocaleString('zh-CN', {
@@ -263,8 +271,8 @@ onBeforeUnmount(() => {
       <aside class="data-panel computed-panel">
         <section class="panel-status">
           <span>状态</span>
-          <strong class="status-badge" :class="badgeClass(status?.cloud_estimate?.seen)">
-            {{ qualityText(status?.cloud_estimate?.overall_status ?? status?.cloud_estimate?.quality) }}
+          <strong class="status-badge" :class="statusBadgeClass(cloudOverallStatus)">
+            {{ qualityText(cloudOverallStatus) }}
           </strong>
         </section>
         <section class="info-section">
