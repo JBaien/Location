@@ -87,6 +87,9 @@ private:
         private_nh_.param("equipment_half_width_m",
                           config_.geometry.equipment_half_width_m,
                           config_.geometry.equipment_half_width_m);
+        private_nh_.param("min_valid_clearance_m",
+                          config_.geometry.min_valid_clearance_m,
+                          config_.geometry.min_valid_clearance_m);
         private_nh_.param("max_ground_plane_rmse",
                           config_.geometry.max_ground_plane_rmse,
                           config_.geometry.max_ground_plane_rmse);
@@ -150,6 +153,7 @@ private:
         out.right_rear_points = result.right_rear_points;
         out.point_count = static_cast<std::uint32_t>(cloud.size());
         out.quality = result.quality;
+        out.invalid_reason = result.invalid_reason;
         pub_.publish(out);
     }
 

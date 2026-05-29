@@ -102,6 +102,7 @@ sample_window_x_m: 0.4
 forward_sign: 1
 left_sign: 1
 equipment_half_width_m: 1.2
+min_valid_clearance_m: -0.2
 max_ground_plane_rmse: 0.08
 min_ground_normal_z: 0.85
 ```
@@ -114,16 +115,17 @@ min_ground_normal_z: 0.85
 - `forward_sign`：定义设备“前方”对应的 X 轴方向。`1` 表示 +X 为前方，`-1` 表示 -X 为前方。
 - `left_sign`：定义设备“左侧”对应的 Y 轴方向。`1` 表示 +Y 为左侧，`-1` 表示 -Y 为左侧。
 - `equipment_half_width_m`：设备半宽，单位米。四角距离会从雷达坐标到侧壁距离中扣除该值，显示为设备外轮廓到侧壁的剩余距离。
+- `min_valid_clearance_m`：允许的最小有效剩余距离，单位米。轻微负值可保留用于提示接近或越界；明显低于该阈值会标记为无效。
 
 ## 设备姿态与四角距离计算
 
-`equipment_state_node` 订阅融合后的 `/points_raw`，从当前点云中估算设备相对巷道/底板的姿态趋势和左右前后剩余距离，并发布 `/equipment_state`。它不是严格 IMU 姿态解算，真实控制或安全联锁应优先使用惯导，并把点云结果作为环境参考或校验。
+`equipment_state_node` 订阅融合后的 `/points_raw`。该点云必须已经通过三雷达 TF 外参统一到 `base_link` 设备坐标系，默认约定为 X 向前、Y 向左、Z 向上。节点从当前点云中估算设备相对巷道/底板的姿态趋势和左右前后剩余距离，并发布 `/equipment_state`。它不是严格 IMU 姿态解算，真实控制或安全联锁应优先使用惯导，并把点云结果作为环境参考或校验。
 
 姿态角计算：
 
-- 俯仰角和横滚角：在设备附近地面 ROI 内筛选底板点，先用 RANSAC 平面剔除浮煤、车体结构、线缆等离群点，再用内点拟合平面 `z = ax + by + c`。`a` 表示前后坡度，用于计算俯仰角；`b` 表示左右坡度，用于计算横滚角。
+- 俯仰角和横滚角：在设备附近地面 ROI 内筛选底板点，先用 RANSAC 平面剔除浮煤、车体结构、线缆等离群点，再用内点拟合平面 `z = ax + by + c`。平面法向量按 `n = normalize([-a, -b, 1])` 理解，`a` 表示前后坡度，用于计算俯仰角；`b` 表示左右坡度，用于计算横滚角。最终正负号必须结合现场“前方抬高、左侧抬高”的实测结果校准。
 - 地面平面需要满足 `min_ground_points`、`max_ground_plane_rmse` 和 `min_ground_normal_z`，否则俯仰/横滚会标记为无效。
-- 偏航角：在侧壁 ROI 内筛选左右边界点，投影到 XY 平面后用 PCA 估计巷道主方向向量 `dir = [dx, dy]`，再用 `atan2(dy, dx)` 计算设备相对巷道方向的偏航角，避免 `y = kx + b` 斜率形式在异常角度下不稳定。
+- 偏航角：在侧壁 ROI 内筛选左右边界点，左右墙分别投影到 XY 平面后用 PCA 估计巷道主方向向量 `dir = [dx, dy]`，方向统一到 `dx >= 0` 后再平均，并用 `atan2(dy, dx)` 计算设备相对巷道方向的偏航角，避免 `y = kx + b` 斜率形式在异常角度下不稳定，也避免 PCA 的 180 度方向歧义造成跳变。
 
 四角距离计算：
 
@@ -132,8 +134,9 @@ min_ground_normal_z: 0.85
 - 每个采样区会按 `sample_window_x_m` 限制前后宽度，并按 `side_y_abs_min/side_y_abs_max`、`side_z_min/side_z_max` 过滤有效侧壁点。
 - 距离值取侧向距离的低分位数，默认 `distance_percentile: 0.1`，这样比直接取最小值更抗孤立噪点。
 - 输出距离会扣除 `equipment_half_width_m`，因此网页显示的是设备外轮廓到侧壁的剩余距离，不是雷达坐标原点到侧壁的距离。
+- 距离允许在 `min_valid_clearance_m` 范围内保留轻微负值，用于提示外轮廓已经接近或越界；明显异常负值会标记为无效。
 - 每个方向有效点数至少需要达到 `min_distance_points`，否则该方向距离无效，网页显示为空值。
-- `/equipment_state` 同时发布整体有效性和单项有效性，包括 `roll_valid`、`pitch_valid`、`yaw_valid`、`left_front_valid`、`left_rear_valid`、`right_front_valid`、`right_rear_valid`，并带有参与计算的点数和 `quality` 状态。
+- `/equipment_state` 同时发布整体有效性和单项有效性，包括 `roll_valid`、`pitch_valid`、`yaw_valid`、`left_front_valid`、`left_rear_valid`、`right_front_valid`、`right_rear_valid`，并带有参与计算的点数、`quality` 状态和 `invalid_reason`。常见无效原因包括 `LOW_GROUND_POINTS`、`RANSAC_FAILED`、`PCA_FAILED`、`LOW_DISTANCE_POINTS`、`CLEARANCE_INVALID`、`TCP_READ_FAILED`。
 
 ## TCP 惯导与毫米波雷达配置
 
@@ -149,23 +152,21 @@ docker/runtime/target_localizer/target_localizer.yaml
 catkin_ws/src/target_localizer/config/target_localizer.yaml
 ```
 
-`modbus.host` 和 `modbus.port` 是现场 TCP 设备的共用 IP 和端口，惯导和 4 路毫米波雷达都使用这两项。部署时只需要改这一处 IP/端口，再把需要接入的 `enabled` 改为 `true`：
+`modbus.host`、`modbus.port`、`modbus.unit_id` 和 `modbus.timeout_ms` 是现场 TCP 设备的共用连接参数，惯导和 4 路毫米波雷达都使用这一组参数。节点内部只维护一个 TCP 连接，并顺序读取惯导和毫米波寄存器，不会为惯导和毫米波分别建立两个连接。部署时只需要改这一处连接参数，再把需要接入的 `enabled` 改为 `true`：
 
 ```yaml
 modbus:
   host: 192.168.1.20     # 现场 TCP 设备 IP，只需要改这一处
   port: 502              # 现场 TCP 端口，惯导和毫米波共用
+  unit_id: 1             # MODBUS 从站 ID，惯导和毫米波共用
+  timeout_ms: 500        # TCP 读写超时，惯导和毫米波共用
   ins:
     enabled: true
-    unit_id: 1           # 从站 ID
-    timeout_ms: 500
     roll: {address: 0, scale: 0.01}
     pitch: {address: 1, scale: 0.01}
     yaw: {address: 2, scale: 0.01}
   mmwave:
     enabled: true
-    unit_id: 1
-    timeout_ms: 500
     left_front: {address: 10, scale: 1.0}
     left_rear: {address: 11, scale: 1.0}
     right_front: {address: 12, scale: 1.0}
@@ -176,7 +177,8 @@ modbus:
 
 - `host`：TCP 设备 IP 地址。当前现场方案中惯导和毫米波共用 `modbus.host`，因此现场换 IP 时只修改这一项。
 - `port`：MODBUS TCP 端口，常用 `502`。当前现场方案中惯导和毫米波共用 `modbus.port`，因此现场换端口时只修改这一项。
-- `unit_id`：MODBUS 从站 ID；多设备挂在同一网关时需要分别配置。
+- `unit_id`：MODBUS 从站 ID。当前现场方案中惯导和毫米波共用 `modbus.unit_id`，因此只配置一次。
+- `timeout_ms`：TCP 读写超时时间，单位毫秒。当前现场方案中惯导和毫米波共用 `modbus.timeout_ms`，因此只配置一次。
 - `address`：寄存器地址，必须按现场设备协议表填写。
 - `scale`：寄存器原始值到显示值的换算系数。例如惯导角度原始值为 1234、`scale: 0.01` 时，显示为 12.34 度；毫米波距离通常按毫米输出，可使用 `scale: 1.0`。
 

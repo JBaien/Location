@@ -36,6 +36,8 @@ struct DistanceSample {
     double mm = 0.0;
     int points = 0;
     bool valid = false;
+    bool low_points = false;
+    bool clearance_invalid = false;
 };
 
 struct PlaneFit {
@@ -190,8 +192,12 @@ DistanceSample sampleSideDistance(const pcl::PointCloud<pcl::PointXYZI>& cloud,
             percentile(distances, config.distance_percentile);
         const double clearance =
             wall_distance - std::max(0.0, config.equipment_half_width_m);
-        sample.mm = std::max(0.0, clearance) * 1000.0;
-        sample.valid = std::isfinite(sample.mm);
+        sample.mm = clearance * 1000.0;
+        sample.valid = std::isfinite(sample.mm) &&
+                       clearance >= config.min_valid_clearance_m;
+        sample.clearance_invalid = !sample.valid;
+    } else {
+        sample.low_points = true;
     }
     return sample;
 }
@@ -240,6 +246,8 @@ EquipmentGeometryResult estimateEquipmentGeometry(
                                           right_wall_points.size());
 
     bool plane_valid = false;
+    const bool enough_ground_points =
+        result.ground_points >= config.min_ground_points;
     const PlaneFit ground = fitGroundPlaneRansac(ground_points, config);
     if (ground.valid) {
         // RANSAC 先剔除浮煤、车体结构、线缆等离群点，再用内点最小二乘细化平面。
@@ -303,10 +311,34 @@ EquipmentGeometryResult estimateEquipmentGeometry(
     result.attitude_valid = plane_valid || yaw_valid;
     if (plane_valid && yaw_valid && result.distances_valid) {
         result.quality = "good";
+        result.invalid_reason = "none";
     } else if (result.attitude_valid || result.distances_valid) {
         result.quality = "degraded";
+        if (!enough_ground_points) {
+            result.invalid_reason = "LOW_GROUND_POINTS";
+        } else if (!plane_valid) {
+            result.invalid_reason = "RANSAC_FAILED";
+        } else if (!yaw_valid) {
+            result.invalid_reason = "PCA_FAILED";
+        } else if (lf.low_points || lr.low_points || rf.low_points || rr.low_points) {
+            result.invalid_reason = "LOW_DISTANCE_POINTS";
+        } else if (lf.clearance_invalid || lr.clearance_invalid ||
+                   rf.clearance_invalid || rr.clearance_invalid) {
+            result.invalid_reason = "CLEARANCE_INVALID";
+        } else {
+            result.invalid_reason = "PARTIAL_VALID";
+        }
     } else {
         result.quality = "lost";
+        if (!enough_ground_points) {
+            result.invalid_reason = "LOW_GROUND_POINTS";
+        } else if (!plane_valid) {
+            result.invalid_reason = "RANSAC_FAILED";
+        } else if (!yaw_valid) {
+            result.invalid_reason = "PCA_FAILED";
+        } else {
+            result.invalid_reason = "NO_VALID_OUTPUT";
+        }
     }
     return result;
 }

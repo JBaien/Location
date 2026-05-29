@@ -2,6 +2,7 @@ export interface EquipmentMetricState {
   seen: boolean;
   source: string;
   quality: string;
+  invalid_reason?: string;
   stamp_ns: number;
   attitude: {
     valid: boolean;

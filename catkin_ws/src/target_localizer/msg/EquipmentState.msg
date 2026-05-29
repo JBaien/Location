@@ -30,3 +30,4 @@ uint32 right_rear_points
 uint32 point_count
 
 string quality
+string invalid_reason

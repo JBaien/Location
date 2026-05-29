@@ -14,7 +14,6 @@ namespace {
 using boost::asio::ip::tcp;
 
 struct ModbusDeviceConfig {
-    bool enabled = false;
     std::string host = "127.0.0.1";
     int port = 502;
     int unit_id = 1;
@@ -111,8 +110,7 @@ public:
     ModbusSensorReferenceNode(ros::NodeHandle& nh, ros::NodeHandle& private_nh)
         : nh_(nh),
           private_nh_(private_nh),
-          ins_client_(io_),
-          radar_client_(io_) {
+          sensor_client_(io_) {
         loadConfig();
         pub_ = nh_.advertise<EquipmentState>(output_topic_, 10, false);
         timer_ = nh_.createTimer(ros::Duration(1.0 / std::max(0.1, rate_hz_)),
@@ -120,21 +118,15 @@ public:
                                  this);
         ROS_INFO_STREAM("modbus_sensor_reference_node publishing "
                         << output_topic_ << ", ins="
-                        << (ins_.enabled ? "enabled" : "disabled")
+                        << (ins_enabled_ ? "enabled" : "disabled")
                         << ", mmwave="
-                        << (radar_.enabled ? "enabled" : "disabled"));
+                        << (radar_enabled_ ? "enabled" : "disabled")
+                        << ", endpoint=" << device_.host << ":"
+                        << device_.port << ", unit_id="
+                        << device_.unit_id);
     }
 
 private:
-    void loadDevice(const std::string& ns, ModbusDeviceConfig& config) {
-        private_nh_.param(ns + "/enabled", config.enabled, config.enabled);
-        private_nh_.param(ns + "/host", config.host, config.host);
-        private_nh_.param(ns + "/port", config.port, config.port);
-        private_nh_.param(ns + "/unit_id", config.unit_id, config.unit_id);
-        private_nh_.param(ns + "/timeout_ms", config.timeout_ms,
-                          config.timeout_ms);
-    }
-
     void loadRegister(const std::string& ns, RegisterConfig& config) {
         private_nh_.param(ns + "/address", config.address, config.address);
         private_nh_.param(ns + "/scale", config.scale, config.scale);
@@ -144,16 +136,13 @@ private:
         private_nh_.param("output_topic", output_topic_, output_topic_);
         private_nh_.param("frame_id", frame_id_, frame_id_);
         private_nh_.param("rate_hz", rate_hz_, rate_hz_);
-        std::string shared_host = ins_.host;
-        private_nh_.param("host", shared_host, shared_host);
-        ins_.host = shared_host;
-        radar_.host = shared_host;
-        int shared_port = ins_.port;
-        private_nh_.param("port", shared_port, shared_port);
-        ins_.port = shared_port;
-        radar_.port = shared_port;
-        loadDevice("ins", ins_);
-        loadDevice("mmwave", radar_);
+        private_nh_.param("host", device_.host, device_.host);
+        private_nh_.param("port", device_.port, device_.port);
+        private_nh_.param("unit_id", device_.unit_id, device_.unit_id);
+        private_nh_.param("timeout_ms", device_.timeout_ms,
+                          device_.timeout_ms);
+        private_nh_.param("ins/enabled", ins_enabled_, ins_enabled_);
+        private_nh_.param("mmwave/enabled", radar_enabled_, radar_enabled_);
         loadRegister("ins/roll", roll_);
         loadRegister("ins/pitch", pitch_);
         loadRegister("ins/yaw", yaw_);
@@ -197,10 +186,11 @@ private:
         state.quality = "lost";
 
         bool any_valid = false;
-        if (ins_.enabled) {
+        bool read_failed = false;
+        if (ins_enabled_) {
             std::vector<std::uint16_t> regs;
             int base = 0;
-            if (readGroup(ins_, ins_client_, {roll_, pitch_, yaw_}, regs, base)) {
+            if (readGroup(device_, sensor_client_, {roll_, pitch_, yaw_}, regs, base)) {
                 state.roll_deg = readScaled(regs, base, roll_);
                 state.pitch_deg = readScaled(regs, base, pitch_);
                 state.yaw_deg = readScaled(regs, base, yaw_);
@@ -210,13 +200,13 @@ private:
                 state.yaw_valid = true;
                 any_valid = true;
             } else {
-                ins_client_.close();
+                read_failed = true;
             }
         }
-        if (radar_.enabled) {
+        if (radar_enabled_) {
             std::vector<std::uint16_t> regs;
             int base = 0;
-            if (readGroup(radar_, radar_client_,
+            if (readGroup(device_, sensor_client_,
                           {left_front_, left_rear_, right_front_, right_rear_},
                           regs, base)) {
                 state.left_front_mm = readScaled(regs, base, left_front_);
@@ -230,25 +220,29 @@ private:
                 state.right_rear_valid = true;
                 any_valid = true;
             } else {
-                radar_client_.close();
+                read_failed = true;
             }
         }
+        if (read_failed) {
+            sensor_client_.close();
+        }
         state.quality = any_valid ? "good" : "lost";
+        state.invalid_reason = any_valid ? "none" : "TCP_READ_FAILED";
         pub_.publish(state);
     }
 
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
     boost::asio::io_context io_;
-    ModbusClient ins_client_;
-    ModbusClient radar_client_;
+    ModbusClient sensor_client_;
     ros::Publisher pub_;
     ros::Timer timer_;
     std::string output_topic_ = "/sensor_reference";
     std::string frame_id_ = "base_link";
     double rate_hz_ = 10.0;
-    ModbusDeviceConfig ins_;
-    ModbusDeviceConfig radar_;
+    ModbusDeviceConfig device_;
+    bool ins_enabled_ = false;
+    bool radar_enabled_ = false;
     RegisterConfig roll_{0, 0.01};
     RegisterConfig pitch_{1, 0.01};
     RegisterConfig yaw_{2, 0.01};

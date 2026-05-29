@@ -95,6 +95,7 @@ function emptyMetric(): EquipmentMetricState {
     seen: false,
     source: 'none',
     quality: 'lost',
+    invalid_reason: 'none',
     stamp_ns: 0,
     attitude: {
       valid: false,

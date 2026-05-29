@@ -92,6 +92,7 @@ struct EquipmentStateSnapshot {
   int right_rear_points = 0;
   int point_count = 0;
   std::string quality = "lost";
+  std::string invalid_reason = "none";
   std::string source = "none";
   std::uint64_t stamp_ns = 0;
 };
@@ -453,6 +454,7 @@ class MineWebBridgeNode {
     snapshot.right_rear_points = static_cast<int>(msg.right_rear_points);
     snapshot.point_count = static_cast<int>(msg.point_count);
     snapshot.quality = msg.quality;
+    snapshot.invalid_reason = msg.invalid_reason;
     snapshot.source = msg.source;
     snapshot.stamp_ns = stampNs(msg.header.stamp);
     return snapshot;
@@ -840,6 +842,7 @@ class MineWebBridgeNode {
     json << "\"seen\":" << (state.seen ? "true" : "false") << ",";
     json << "\"source\":\"" << state.source << "\",";
     json << "\"quality\":\"" << state.quality << "\",";
+    json << "\"invalid_reason\":\"" << state.invalid_reason << "\",";
     json << "\"stamp_ns\":" << state.stamp_ns << ",";
     json << "\"attitude\":{";
     json << "\"valid\":" << (state.attitude_valid ? "true" : "false") << ",";

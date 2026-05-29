@@ -168,6 +168,41 @@ TEST(EquipmentGeometryTest, SubtractsEquipmentHalfWidthFromSideDistances) {
     EXPECT_NEAR(result.right_rear_mm, 500.0, 1.0);
 }
 
+TEST(EquipmentGeometryTest, KeepsSmallNegativeClearanceButRejectsLargeNegative) {
+    pcl::PointCloud<pcl::PointXYZI> cloud;
+    auto addSide = [&cloud](double x_center, double y) {
+        for (double x = x_center - 0.15; x <= x_center + 0.15; x += 0.05) {
+            for (double z = -0.5; z <= 0.5; z += 0.25) {
+                pcl::PointXYZI p;
+                p.x = x;
+                p.y = y;
+                p.z = z;
+                cloud.push_back(p);
+            }
+        }
+    };
+    addSide(2.0, 1.10);
+    addSide(-1.5, 1.10);
+    addSide(2.0, -1.10);
+    addSide(-1.5, -1.10);
+
+    EquipmentGeometryConfig config;
+    config.front_sample_distance_m = 2.0;
+    config.rear_sample_distance_m = 1.5;
+    config.sample_window_x_m = 0.4;
+    config.min_distance_points = 3;
+    config.equipment_half_width_m = 1.2;
+    config.min_valid_clearance_m = -0.2;
+    EquipmentGeometryResult result = estimateEquipmentGeometry(cloud, config);
+    EXPECT_TRUE(result.distances_valid);
+    EXPECT_NEAR(result.left_front_mm, -100.0, 1.0);
+
+    config.min_valid_clearance_m = -0.05;
+    result = estimateEquipmentGeometry(cloud, config);
+    EXPECT_FALSE(result.distances_valid);
+    EXPECT_EQ(result.invalid_reason, "CLEARANCE_INVALID");
+}
+
 }  // namespace
 }  // namespace target_localizer
 
