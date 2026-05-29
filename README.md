@@ -87,17 +87,60 @@ forward_sign: 1
 left_sign: 1
 ```
 
-MODBUS TCP 默认关闭，现场按真实设备开启并修改寄存器：
+## TCP 惯导与毫米波雷达配置
+
+惯导和毫米波雷达真实值由 `modbus_sensor_reference_node` 通过 MODBUS TCP 读取，并统一发布到 `/sensor_reference`。Docker 部署时只需要修改外挂配置：
+
+```text
+docker/runtime/target_localizer/target_localizer.yaml
+```
+
+源码本地运行时对应文件为：
+
+```text
+catkin_ws/src/target_localizer/config/target_localizer.yaml
+```
+
+`modbus.ins` 是惯导 TCP 配置，`modbus.mmwave` 是 4 路毫米波雷达 TCP 配置。把 `enabled` 改为 `true`，并将 `host` 改成现场设备 IP：
 
 ```yaml
 modbus:
   ins:
     enabled: true
-    host: 192.168.1.20
+    host: 192.168.1.20   # 惯导设备 IP
+    port: 502            # MODBUS TCP 端口，通常为 502
+    unit_id: 1           # 从站 ID
+    timeout_ms: 500
+    roll: {address: 0, scale: 0.01}
+    pitch: {address: 1, scale: 0.01}
+    yaw: {address: 2, scale: 0.01}
   mmwave:
     enabled: true
-    host: 192.168.1.21
+    host: 192.168.1.21   # 毫米波雷达控制器或网关 IP
+    port: 502
+    unit_id: 1
+    timeout_ms: 500
+    left_front: {address: 10, scale: 1.0}
+    left_rear: {address: 11, scale: 1.0}
+    right_front: {address: 12, scale: 1.0}
+    right_rear: {address: 13, scale: 1.0}
 ```
+
+字段说明：
+
+- `host`：TCP 设备 IP 地址。惯导和毫米波可以是不同 IP，也可以是同一个网关 IP。
+- `port`：MODBUS TCP 端口，常用 `502`，按设备手册修改。
+- `unit_id`：MODBUS 从站 ID；多设备挂在同一网关时需要分别配置。
+- `address`：寄存器地址，必须按现场设备协议表填写。
+- `scale`：寄存器原始值到显示值的换算系数。例如惯导角度原始值为 1234、`scale: 0.01` 时，显示为 12.34 度；毫米波距离通常按毫米输出，可使用 `scale: 1.0`。
+
+修改 Docker 外挂 YAML 后重启运行容器使配置生效：
+
+```bash
+docker compose -f docker/docker-compose.yml restart mine-lidar-runtime
+```
+
+如果传感器没有接入，可保持 `enabled: false`，网页右侧真实惯导和毫米波数据会显示为空值。
 
 ## 测试
 
