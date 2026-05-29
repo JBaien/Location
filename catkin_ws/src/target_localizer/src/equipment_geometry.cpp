@@ -267,20 +267,35 @@ EquipmentGeometryResult estimateEquipmentGeometry(
     Eigen::Vector2d direction_sum(0.0, 0.0);
     int direction_count = 0;
     Eigen::Vector2d direction;
+    Eigen::Vector2d left_direction;
+    Eigen::Vector2d right_direction;
+    bool left_direction_valid = false;
+    bool right_direction_valid = false;
     if (static_cast<int>(left_wall_points.size()) >= config.min_wall_points &&
         fitPcaDirection(left_wall_points, direction)) {
-        direction_sum += direction;
+        left_direction = direction;
+        left_direction_valid = true;
+        direction_sum += left_direction;
         ++direction_count;
     }
     if (static_cast<int>(right_wall_points.size()) >= config.min_wall_points &&
         fitPcaDirection(right_wall_points, direction)) {
-        direction_sum += direction;
+        right_direction = direction;
+        right_direction_valid = true;
+        direction_sum += right_direction;
         ++direction_count;
+    }
+    bool pca_consistent = true;
+    if (left_direction_valid && right_direction_valid) {
+        const double dot = std::max(-1.0, std::min(1.0, left_direction.dot(right_direction)));
+        result.wall_direction_diff_deg = std::acos(std::abs(dot)) * kRadToDeg;
+        pca_consistent = result.wall_direction_diff_deg <=
+                         config.max_wall_direction_diff_deg;
     }
     if (direction_count > 0 && direction_sum.norm() > 1e-6) {
         const Eigen::Vector2d dir = direction_sum.normalized();
         result.yaw_deg = std::atan2(dir.y(), dir.x()) * kRadToDeg;
-        yaw_valid = std::isfinite(result.yaw_deg);
+        yaw_valid = std::isfinite(result.yaw_deg) && pca_consistent;
         result.yaw_valid = yaw_valid;
     }
 
@@ -319,7 +334,7 @@ EquipmentGeometryResult estimateEquipmentGeometry(
         } else if (!plane_valid) {
             result.invalid_reason = "RANSAC_FAILED";
         } else if (!yaw_valid) {
-            result.invalid_reason = "PCA_FAILED";
+            result.invalid_reason = pca_consistent ? "PCA_FAILED" : "PCA_INCONSISTENT";
         } else if (lf.low_points || lr.low_points || rf.low_points || rr.low_points) {
             result.invalid_reason = "LOW_DISTANCE_POINTS";
         } else if (lf.clearance_invalid || lr.clearance_invalid ||
@@ -335,7 +350,7 @@ EquipmentGeometryResult estimateEquipmentGeometry(
         } else if (!plane_valid) {
             result.invalid_reason = "RANSAC_FAILED";
         } else if (!yaw_valid) {
-            result.invalid_reason = "PCA_FAILED";
+            result.invalid_reason = pca_consistent ? "PCA_FAILED" : "PCA_INCONSISTENT";
         } else {
             result.invalid_reason = "NO_VALID_OUTPUT";
         }

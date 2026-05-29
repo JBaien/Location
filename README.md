@@ -105,6 +105,10 @@ equipment_half_width_m: 1.2
 min_valid_clearance_m: -0.2
 max_ground_plane_rmse: 0.08
 min_ground_normal_z: 0.85
+max_wall_direction_diff_deg: 8.0
+max_pointcloud_age_sec: 0.5
+distance_filter_alpha: 0.3
+max_distance_jump_m: 0.3
 ```
 
 这些参数含义如下：
@@ -116,16 +120,23 @@ min_ground_normal_z: 0.85
 - `left_sign`：定义设备“左侧”对应的 Y 轴方向。`1` 表示 +Y 为左侧，`-1` 表示 -Y 为左侧。
 - `equipment_half_width_m`：设备半宽，单位米。四角距离会从雷达坐标到侧壁距离中扣除该值，显示为设备外轮廓到侧壁的剩余距离。
 - `min_valid_clearance_m`：允许的最小有效剩余距离，单位米。轻微负值可保留用于提示接近或越界；明显低于该阈值会标记为无效。
+- `max_wall_direction_diff_deg`：左右墙 PCA 主方向最大允许夹角，超过后偏航角无效。
+- `max_pointcloud_age_sec`：输入点云最大允许延迟，超过后整体状态无效。
+- `distance_filter_alpha`：距离一阶滤波系数，越小越平滑，越大越跟手。
+- `max_distance_jump_m`：距离单帧最大允许跳变，超过后该方向距离无效。
 
 ## 设备姿态与四角距离计算
 
 `equipment_state_node` 订阅融合后的 `/points_raw`。该点云必须已经通过三雷达 TF 外参统一到 `base_link` 设备坐标系，默认约定为 X 向前、Y 向左、Z 向上。节点从当前点云中估算设备相对巷道/底板的姿态趋势和左右前后剩余距离，并发布 `/equipment_state`。它不是严格 IMU 姿态解算，真实控制或安全联锁应优先使用惯导，并把点云结果作为环境参考或校验。
+
+节点会检查输入点云的 `header.stamp`、`frame_id` 和点数。如果点云为空、超时，或 `frame_id` 不符合 `required_frame_id`，则 `/equipment_state` 整体标记为无效。当前部署中融合节点应输出 `frame_id=base_link`；如果后续改为其他坐标系，应先通过 TF 转换到设备坐标系再计算。
 
 姿态角计算：
 
 - 俯仰角和横滚角：在设备附近地面 ROI 内筛选底板点，先用 RANSAC 平面剔除浮煤、车体结构、线缆等离群点，再用内点拟合平面 `z = ax + by + c`。平面法向量按 `n = normalize([-a, -b, 1])` 理解，`a` 表示前后坡度，用于计算俯仰角；`b` 表示左右坡度，用于计算横滚角。最终正负号必须结合现场“前方抬高、左侧抬高”的实测结果校准。
 - 地面平面需要满足 `min_ground_points`、`max_ground_plane_rmse` 和 `min_ground_normal_z`，否则俯仰/横滚会标记为无效。
 - 偏航角：在侧壁 ROI 内筛选左右边界点，左右墙分别投影到 XY 平面后用 PCA 估计巷道主方向向量 `dir = [dx, dy]`，方向统一到 `dx >= 0` 后再平均，并用 `atan2(dy, dx)` 计算设备相对巷道方向的偏航角，避免 `y = kx + b` 斜率形式在异常角度下不稳定，也避免 PCA 的 180 度方向歧义造成跳变。
+- 左右墙主方向夹角必须小于 `max_wall_direction_diff_deg`，否则认为侧壁方向不一致，偏航角无效。
 
 四角距离计算：
 
@@ -135,8 +146,9 @@ min_ground_normal_z: 0.85
 - 距离值取侧向距离的低分位数，默认 `distance_percentile: 0.1`，这样比直接取最小值更抗孤立噪点。
 - 输出距离会扣除 `equipment_half_width_m`，因此网页显示的是设备外轮廓到侧壁的剩余距离，不是雷达坐标原点到侧壁的距离。
 - 距离允许在 `min_valid_clearance_m` 范围内保留轻微负值，用于提示外轮廓已经接近或越界；明显异常负值会标记为无效。
+- 距离值会经过轻量时间滤波，并使用 `max_distance_jump_m` 抑制孤立帧突变；跳变过大时该方向距离无效。
 - 每个方向有效点数至少需要达到 `min_distance_points`，否则该方向距离无效，网页显示为空值。
-- `/equipment_state` 同时发布整体有效性和单项有效性，包括 `roll_valid`、`pitch_valid`、`yaw_valid`、`left_front_valid`、`left_rear_valid`、`right_front_valid`、`right_rear_valid`，并带有参与计算的点数、`quality` 状态和 `invalid_reason`。常见无效原因包括 `LOW_GROUND_POINTS`、`RANSAC_FAILED`、`PCA_FAILED`、`LOW_DISTANCE_POINTS`、`CLEARANCE_INVALID`、`TCP_READ_FAILED`。
+- `/equipment_state` 同时发布整体有效性和单项有效性，包括 `roll_valid`、`pitch_valid`、`yaw_valid`、`left_front_valid`、`left_rear_valid`、`right_front_valid`、`right_rear_valid`，并带有参与计算的点数、`quality` 状态和 `invalid_reason`。`invalid_reason` 只描述本节点输入、ROI、拟合和质量门控失败原因，不包含前端 WebSocket 或外部 TCP 通信错误。常见无效原因包括 `NO_POINTCLOUD`、`POINTCLOUD_STALE`、`FRAME_ID_INVALID`、`LOW_GROUND_POINTS`、`RANSAC_FAILED`、`PCA_FAILED`、`PCA_INCONSISTENT`、`LOW_DISTANCE_POINTS`、`CLEARANCE_INVALID`、`DISTANCE_JUMP_REJECTED`。
 
 ## TCP 惯导与毫米波雷达配置
 

@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cstdint>
+#include <cmath>
+#include <limits>
 #include <string>
 
 #include <pcl_conversions/pcl_conversions.h>
@@ -16,6 +18,10 @@ struct NodeConfig {
     std::string input_topic = "/points_raw";
     std::string output_topic = "/equipment_state";
     std::string target_frame = "base_link";
+    std::string required_frame_id = "base_link";
+    double max_pointcloud_age_sec = 0.5;
+    double distance_filter_alpha = 0.3;
+    double max_distance_jump_m = 0.3;
     EquipmentGeometryConfig geometry;
 };
 
@@ -40,6 +46,17 @@ private:
                           config_.output_topic);
         private_nh_.param("target_frame", config_.target_frame,
                           config_.target_frame);
+        private_nh_.param("required_frame_id", config_.required_frame_id,
+                          config_.required_frame_id);
+        private_nh_.param("max_pointcloud_age_sec",
+                          config_.max_pointcloud_age_sec,
+                          config_.max_pointcloud_age_sec);
+        private_nh_.param("distance_filter_alpha",
+                          config_.distance_filter_alpha,
+                          config_.distance_filter_alpha);
+        private_nh_.param("max_distance_jump_m",
+                          config_.max_distance_jump_m,
+                          config_.max_distance_jump_m);
         private_nh_.param("ground_x_min", config_.geometry.ground_x_min,
                           config_.geometry.ground_x_min);
         private_nh_.param("ground_x_max", config_.geometry.ground_x_max,
@@ -96,6 +113,9 @@ private:
         private_nh_.param("min_ground_normal_z",
                           config_.geometry.min_ground_normal_z,
                           config_.geometry.min_ground_normal_z);
+        private_nh_.param("max_wall_direction_diff_deg",
+                          config_.geometry.max_wall_direction_diff_deg,
+                          config_.geometry.max_wall_direction_diff_deg);
         private_nh_.param("min_ground_points",
                           config_.geometry.min_ground_points,
                           config_.geometry.min_ground_points);
@@ -114,13 +134,17 @@ private:
         config_.geometry.left_sign = config_.geometry.left_sign >= 0 ? 1 : -1;
         config_.geometry.distance_percentile = std::max(
             0.0, std::min(1.0, config_.geometry.distance_percentile));
+        config_.distance_filter_alpha = std::max(
+            0.0, std::min(1.0, config_.distance_filter_alpha));
     }
 
     void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg) {
         pcl::PointCloud<pcl::PointXYZI> cloud;
         pcl::fromROSMsg(*msg, cloud);
-        const EquipmentGeometryResult result =
+        EquipmentGeometryResult result =
             estimateEquipmentGeometry(cloud, config_.geometry);
+        applyInputQuality(*msg, cloud.size(), result);
+        applyDistanceFilter(result);
 
         EquipmentState out;
         out.header = msg->header;
@@ -157,11 +181,86 @@ private:
         pub_.publish(out);
     }
 
+    void applyInputQuality(const sensor_msgs::PointCloud2& msg,
+                           std::size_t point_count,
+                           EquipmentGeometryResult& result) const {
+        if (point_count == 0U) {
+            invalidateAll("NO_POINTCLOUD", result);
+            return;
+        }
+        if (!config_.required_frame_id.empty() &&
+            msg.header.frame_id != config_.required_frame_id) {
+            invalidateAll("FRAME_ID_INVALID", result);
+            return;
+        }
+        if (config_.max_pointcloud_age_sec > 0.0 && !msg.header.stamp.isZero()) {
+            const double age = (ros::Time::now() - msg.header.stamp).toSec();
+            if (std::isfinite(age) && age > config_.max_pointcloud_age_sec) {
+                invalidateAll("POINTCLOUD_STALE", result);
+            }
+        }
+    }
+
+    void invalidateAll(const std::string& reason,
+                       EquipmentGeometryResult& result) const {
+        result.attitude_valid = false;
+        result.distances_valid = false;
+        result.roll_valid = false;
+        result.pitch_valid = false;
+        result.yaw_valid = false;
+        result.left_front_valid = false;
+        result.left_rear_valid = false;
+        result.right_front_valid = false;
+        result.right_rear_valid = false;
+        result.quality = "lost";
+        result.invalid_reason = reason;
+    }
+
+    void applyDistanceFilter(EquipmentGeometryResult& result) {
+        filterDistance(result.left_front_valid, result.left_front_mm,
+                       last_left_front_mm_);
+        filterDistance(result.left_rear_valid, result.left_rear_mm,
+                       last_left_rear_mm_);
+        filterDistance(result.right_front_valid, result.right_front_mm,
+                       last_right_front_mm_);
+        filterDistance(result.right_rear_valid, result.right_rear_mm,
+                       last_right_rear_mm_);
+        result.distances_valid = result.left_front_valid &&
+                                 result.left_rear_valid &&
+                                 result.right_front_valid &&
+                                 result.right_rear_valid;
+        if (result.invalid_reason == "none" && !result.distances_valid) {
+            result.quality = result.attitude_valid ? "degraded" : "lost";
+            result.invalid_reason = "DISTANCE_JUMP_REJECTED";
+        }
+    }
+
+    void filterDistance(bool& valid, double& value_mm, double& last_mm) const {
+        if (!valid) {
+            return;
+        }
+        if (std::isfinite(last_mm)) {
+            const double jump_m = std::abs(value_mm - last_mm) / 1000.0;
+            if (config_.max_distance_jump_m > 0.0 &&
+                jump_m > config_.max_distance_jump_m) {
+                valid = false;
+                return;
+            }
+            value_mm = config_.distance_filter_alpha * value_mm +
+                       (1.0 - config_.distance_filter_alpha) * last_mm;
+        }
+        last_mm = value_mm;
+    }
+
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
     NodeConfig config_;
     ros::Subscriber sub_;
     ros::Publisher pub_;
+    double last_left_front_mm_ = std::numeric_limits<double>::quiet_NaN();
+    double last_left_rear_mm_ = std::numeric_limits<double>::quiet_NaN();
+    double last_right_front_mm_ = std::numeric_limits<double>::quiet_NaN();
+    double last_right_rear_mm_ = std::numeric_limits<double>::quiet_NaN();
 };
 
 }  // namespace

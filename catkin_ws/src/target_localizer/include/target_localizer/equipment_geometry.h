@@ -33,6 +33,7 @@ struct EquipmentGeometryConfig {
     double min_valid_clearance_m = -0.2;
     double max_ground_plane_rmse = 0.08;
     double min_ground_normal_z = 0.85;
+    double max_wall_direction_diff_deg = 8.0;
     int min_ground_points = 20;
     int min_wall_points = 20;
     int min_distance_points = 5;
@@ -66,6 +67,7 @@ struct EquipmentGeometryResult {
     int right_rear_points = 0;
     std::string quality = "lost";
     std::string invalid_reason = "none";
+    double wall_direction_diff_deg = 0.0;
 };
 
 EquipmentGeometryResult estimateEquipmentGeometry(

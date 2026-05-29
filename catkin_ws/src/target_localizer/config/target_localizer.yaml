@@ -36,6 +36,10 @@ hold_duration: 0.3
 
 # 设备姿态/四角距离估计。订阅融合后的 /points_raw，输出 /equipment_state。
 equipment_state_topic: /equipment_state
+required_frame_id: base_link
+max_pointcloud_age_sec: 0.5
+distance_filter_alpha: 0.3
+max_distance_jump_m: 0.3
 ground_x_min: -4.0
 ground_x_max: 4.0
 ground_y_min: -2.5
@@ -60,6 +64,7 @@ equipment_half_width_m: 1.2
 min_valid_clearance_m: -0.2
 max_ground_plane_rmse: 0.08
 min_ground_normal_z: 0.85
+max_wall_direction_diff_deg: 8.0
 min_ground_points: 20
 min_wall_points: 20
 min_distance_points: 5
