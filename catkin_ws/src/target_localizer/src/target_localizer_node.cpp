@@ -75,6 +75,12 @@ struct NodeConfig {
     double zero_y = 0.0;
 };
 
+// target_localizer_node 是圆柱标靶定位链路的 ROS 封装：
+//   /points_raw -> ROI 裁剪 -> 降采样/去离群 -> 圆柱 RANSAC -> 参考高度取中心
+//               -> 常速度跟踪 -> /target_measurement + /target_xy + Marker/diagnostics
+//
+// 注意：本节点默认订阅的是三雷达融合后的 /points_raw，不再重复处理三路原始点云。
+// 三雷达时间同步、TF 变换和点云字段保留由 lidar_fusion 包负责。
 class TargetLocalizerNode {
 public:
     TargetLocalizerNode(ros::NodeHandle& nh, ros::NodeHandle& private_nh)
@@ -116,6 +122,9 @@ private:
     }
 
     void loadConfig() {
+        // 所有现场可调参数都从节点私有命名空间读取，由 launch 中加载的 YAML 提供。
+        // 这样 Docker 现场只需要修改 /config/target_localizer/target_localizer.yaml，
+        // 不需要重新构建镜像。
         private_nh_.param("input_topic", config_.input_topic,
                           config_.input_topic);
         private_nh_.param("target_frame", config_.target_frame,
@@ -166,6 +175,8 @@ private:
         CloudT::Ptr raw(new CloudT);
         pcl::fromROSMsg(*msg, *raw);
 
+        // 先做强先验 ROI：标靶按设计安装在设备后方，直接裁掉大部分巷道结构、
+        // 地面、车体和远处干扰，降低 RANSAC 被其他圆柱/管线误吸附的概率。
         CloudT::Ptr roi = cropRoi(*raw);
         publishRoi(*roi, msg->header);
         filterCloud(roi);
@@ -181,12 +192,15 @@ private:
 
         if (!detected) {
             ++frames_missed_;
+            // 检测失败不立即跳零。跟踪器会短时外推并根据连续丢帧次数降级到 LOST。
             const TrackerOutput out = tracker_.markMissed(msg->header.stamp.toSec());
             publishOutput(msg->header, out);
             publishDiagnostics(msg->header.stamp, out, 0, 0.0, reason);
             return;
         }
 
+        // PCL 拟合得到的是完整三维圆柱轴线。业务只需要固定参考高度处的轴线中心，
+        // 因此在 z=reference_z 平面取交点，避免圆柱局部倾斜影响 XY 输出定义。
         const Eigen::Vector3d center =
             centerAtReferenceHeight(model, config_.reference_z);
         Measurement measurement;
@@ -209,6 +223,7 @@ private:
         output->header = input.header;
         output->reserve(input.size());
         for (const PointT& point : input.points) {
+            // 非有限点会破坏 PCL 滤波和法向估计，必须在最前面剔除。
             if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
                 !std::isfinite(point.z)) {
                 continue;
@@ -227,6 +242,8 @@ private:
     }
 
     void filterCloud(CloudT::Ptr& cloud) const {
+        // VoxelGrid 用 2 cm 默认体素压缩重复/密集点，保留局部几何质心。
+        // 这里的 leaf 不能过大，否则 Ø250 mm 圆柱横向采样会被过度抹平。
         if (config_.voxel_leaf > 0.0 && !cloud->empty()) {
             pcl::VoxelGrid<PointT> voxel;
             voxel.setInputCloud(cloud);
@@ -236,6 +253,8 @@ private:
             voxel.filter(*filtered);
             cloud = filtered;
         }
+        // SOR 通过邻域统计剔除孤立噪点。粉尘场景下该步骤能减少 RANSAC 外点压力，
+        // 但 mean_k 不能大于有效目标点数，否则小目标会被误伤。
         if (static_cast<int>(cloud->size()) > config_.sor_mean_k &&
             config_.sor_mean_k > 0) {
             pcl::StatisticalOutlierRemoval<PointT> sor;
@@ -252,6 +271,8 @@ private:
                      std::string& reason) const {
         CloudT::ConstPtr cloud_ptr(new CloudT(cloud));
         pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
+        // SACMODEL_CYLINDER 需要点法向辅助约束。normal_k 越大越平滑，但遮挡/稀疏时
+        // 会跨结构估法向；默认 20 适合三雷达融合后几十到上百个目标点的规模。
         pcl::NormalEstimation<PointT, pcl::Normal> normal_estimator;
         normal_estimator.setInputCloud(cloud_ptr);
         normal_estimator.setSearchMethod(
@@ -260,6 +281,8 @@ private:
         normal_estimator.setKSearch(config_.normal_k);
         normal_estimator.compute(*normals);
 
+        // RANSAC 粗拟合负责在外点中找出圆柱内点。
+        // 半径范围来自标靶尺寸：默认 Ø250 mm，即半径 0.125 m，允许 ±0.03 m。
         pcl::SACSegmentationFromNormals<PointT, pcl::Normal> segmenter;
         segmenter.setOptimizeCoefficients(true);
         segmenter.setModelType(pcl::SACMODEL_CYLINDER);
@@ -289,6 +312,8 @@ private:
         model.radius = coefficients->values[6];
         model.inlier_count = static_cast<int>(inliers->indices.size());
 
+        // 用内点到圆柱侧壁的径向残差计算 RMS。该值会发布到 diagnostics，
+        // 也用于判断当前检测是 GOOD 还是 DEGRADED。
         double sum_sq = 0.0;
         for (int index : inliers->indices) {
             const PointT& point = cloud.points[index];
@@ -328,6 +353,8 @@ private:
         msg.center_x = center.x();
         msg.center_y = center.y();
         msg.center_z = center.z();
+        // 位移定义沿用 SLAM.md：建零点减当前目标中心。
+        // 设备相对标靶移动时，目标在设备坐标系中的反向变化会被换算成设备位移。
         msg.dx = config_.zero_x - center.x();
         msg.dy = config_.zero_y - center.y();
         msg.radius = model.radius;
@@ -351,6 +378,8 @@ private:
                                  : config_.target_frame;
         xy.center_x = out.cx;
         xy.center_y = out.cy;
+        // /target_xy 是给上层控制/显示使用的轻量输出，只保留最终 XY 位移、
+        // 当前中心点、速度估计和质量状态。
         xy.dx = config_.zero_x - out.cx;
         xy.dy = config_.zero_y - out.cy;
         xy.velocity_x = out.vx;
@@ -382,6 +411,8 @@ private:
         marker.id = 1;
         marker.type = visualization_msgs::Marker::CYLINDER;
         marker.action = visualization_msgs::Marker::ADD;
+        // RViz Marker 用半透明圆柱显示检测结果，便于现场确认 ROI、半径和中心位置。
+        // 第一阶段只显示竖直圆柱；轴线倾斜的精确姿态可后续再扩展。
         const Eigen::Vector3d center =
             centerAtReferenceHeight(model, config_.reference_z);
         marker.pose.position.x = center.x();
