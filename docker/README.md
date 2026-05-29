@@ -131,16 +131,38 @@ UBUNTU_APT_MIRROR: https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports
 
 这里没有继续使用 `docker.mirrors.ustc.edu.cn`，因为当前环境下该域名解析失败，会卡在拉取 `node` 或 `ros` 基础镜像之前。
 
-## arm64 现场部署
+## 现场部署包
 
-把以下内容拷贝到 arm64 主机，例如 `/opt/mine-lidar`：
+推荐把完整部署包拷贝到现场主机。部署包包含镜像压缩包、compose 文件、`runtime` 外挂配置和校验文件：
 
 ```text
-mine-lidar-runtime-melodic-arm64.tar.gz
-docker/
+mine-lidar-deploy-amd64.tar.gz
+mine-lidar-deploy-arm64.tar.gz
 ```
 
-推荐目录结构：
+amd64 主机部署：
+
+```bash
+tar -xzf mine-lidar-deploy-amd64.tar.gz
+cd deploy-amd64
+sha256sum -c SHA256SUMS.txt
+gunzip -c mine-lidar-runtime-melodic-amd64.tar.gz | docker load
+cd docker
+docker compose -f docker-compose.yml up -d
+```
+
+arm64 主机部署：
+
+```bash
+tar -xzf mine-lidar-deploy-arm64.tar.gz
+cd deploy-arm64
+sha256sum -c SHA256SUMS.txt
+gunzip -c mine-lidar-runtime-melodic-arm64.tar.gz | docker load
+cd docker
+docker compose -f docker-compose.arm64.yml up -d
+```
+
+如果只分发 arm64 镜像和 `docker/` 目录，也可以放到 `/opt/mine-lidar`：
 
 ```text
 /opt/mine-lidar/
@@ -150,19 +172,13 @@ docker/
     └── runtime/
 ```
 
-加载镜像：
-
-```bash
-cd /opt/mine-lidar
-gunzip -c mine-lidar-runtime-melodic-arm64.tar.gz | docker load
-docker image ls mine-lidar-runtime
-```
-
-确认看到：
+加载后应能看到：
 
 ```text
 mine-lidar-runtime:melodic-arm64
 ```
+
+部署后现场可直接修改 `deploy-*/docker/runtime` 或 `/opt/mine-lidar/docker/runtime` 下的 launch/YAML，例如雷达 TF、融合参数、设备状态参数、MODBUS TCP IP 和端口；修改后重启容器即可生效。
 
 如果现场主机没有 compose 插件，可以直接用 `docker run`：
 

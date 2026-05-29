@@ -31,6 +31,39 @@ arm64 主机打包：
 ./docker/build_arm64.sh
 ```
 
+## Docker 镜像部署包
+
+本仓库支持打包 Ubuntu 18.04 / ROS Melodic 运行镜像。当前生成的现场部署总包包括镜像、compose 文件、`docker/runtime` 外挂配置和校验文件：
+
+```text
+mine-lidar-deploy-amd64.tar.gz
+mine-lidar-deploy-arm64.tar.gz
+```
+
+amd64 主机部署：
+
+```bash
+tar -xzf mine-lidar-deploy-amd64.tar.gz
+cd deploy-amd64
+sha256sum -c SHA256SUMS.txt
+gunzip -c mine-lidar-runtime-melodic-amd64.tar.gz | docker load
+cd docker
+docker compose -f docker-compose.yml up -d
+```
+
+arm64 主机部署：
+
+```bash
+tar -xzf mine-lidar-deploy-arm64.tar.gz
+cd deploy-arm64
+sha256sum -c SHA256SUMS.txt
+gunzip -c mine-lidar-runtime-melodic-arm64.tar.gz | docker load
+cd docker
+docker compose -f docker-compose.arm64.yml up -d
+```
+
+部署后现场可直接修改 `deploy-*/docker/runtime` 下的 launch/YAML，例如雷达 TF、融合参数、设备状态参数、MODBUS TCP IP 和端口；修改后重启容器即可生效。
+
 ## 运行
 
 默认 Docker 启动会同时拉起 TM16 驱动、三雷达融合、圆柱标靶定位、设备状态估计、MODBUS TCP 参考数据节点、WebSocket 桥和静态 Web 服务。
