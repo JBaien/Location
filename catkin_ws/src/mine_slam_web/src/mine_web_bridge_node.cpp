@@ -80,6 +80,10 @@ struct EquipmentStateSnapshot {
   double pitch_deg = 0.0;
   double yaw_deg = 0.0;
   double ground_plane_rmse = 0.0;
+  double left_front_clearance_m = 0.0;
+  double left_rear_clearance_m = 0.0;
+  double right_front_clearance_m = 0.0;
+  double right_rear_clearance_m = 0.0;
   double left_front_mm = 0.0;
   double left_rear_mm = 0.0;
   double right_front_mm = 0.0;
@@ -442,6 +446,10 @@ class MineWebBridgeNode {
     snapshot.pitch_deg = msg.pitch_deg;
     snapshot.yaw_deg = msg.yaw_deg;
     snapshot.ground_plane_rmse = msg.ground_plane_rmse;
+    snapshot.left_front_clearance_m = msg.left_front_clearance_m;
+    snapshot.left_rear_clearance_m = msg.left_rear_clearance_m;
+    snapshot.right_front_clearance_m = msg.right_front_clearance_m;
+    snapshot.right_rear_clearance_m = msg.right_rear_clearance_m;
     snapshot.left_front_mm = msg.left_front_mm;
     snapshot.left_rear_mm = msg.left_rear_mm;
     snapshot.right_front_mm = msg.right_front_mm;
@@ -863,6 +871,10 @@ class MineWebBridgeNode {
     json << "\"left_rear_valid\":" << (state.left_rear_valid ? "true" : "false") << ",";
     json << "\"right_front_valid\":" << (state.right_front_valid ? "true" : "false") << ",";
     json << "\"right_rear_valid\":" << (state.right_rear_valid ? "true" : "false") << ",";
+    json << "\"left_front_clearance_m\":" << state.left_front_clearance_m << ",";
+    json << "\"left_rear_clearance_m\":" << state.left_rear_clearance_m << ",";
+    json << "\"right_front_clearance_m\":" << state.right_front_clearance_m << ",";
+    json << "\"right_rear_clearance_m\":" << state.right_rear_clearance_m << ",";
     json << "\"left_front_mm\":" << state.left_front_mm << ",";
     json << "\"left_rear_mm\":" << state.left_rear_mm << ",";
     json << "\"right_front_mm\":" << state.right_front_mm << ",";

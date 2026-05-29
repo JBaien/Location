@@ -68,6 +68,10 @@ function badgeClass(valid: boolean | undefined): string {
 
 function qualityText(value: string | undefined): string {
   const map: Record<string, string> = {
+    OK: '正常',
+    DEGRADED: '降级',
+    INVALID: '无效',
+    LOST: '离线',
     good: '正常',
     degraded: '降级',
     lost: '离线',
@@ -116,6 +120,10 @@ function emptyMetric(): EquipmentMetricState {
       left_rear_valid: false,
       right_front_valid: false,
       right_rear_valid: false,
+      left_front_clearance_m: 0,
+      left_rear_clearance_m: 0,
+      right_front_clearance_m: 0,
+      right_rear_clearance_m: 0,
       left_front_mm: 0,
       left_rear_mm: 0,
       right_front_mm: 0,

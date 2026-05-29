@@ -51,6 +51,9 @@ private:
         private_nh_.param("max_pointcloud_age_sec",
                           config_.max_pointcloud_age_sec,
                           config_.max_pointcloud_age_sec);
+        private_nh_.param("min_total_points",
+                          config_.geometry.min_total_points,
+                          config_.geometry.min_total_points);
         private_nh_.param("distance_filter_alpha",
                           config_.distance_filter_alpha,
                           config_.distance_filter_alpha);
@@ -165,6 +168,10 @@ private:
         out.pitch_deg = result.pitch_deg;
         out.yaw_deg = result.yaw_deg;
         out.ground_plane_rmse = result.ground_plane_rmse;
+        out.left_front_clearance_m = result.left_front_clearance_m;
+        out.left_rear_clearance_m = result.left_rear_clearance_m;
+        out.right_front_clearance_m = result.right_front_clearance_m;
+        out.right_rear_clearance_m = result.right_rear_clearance_m;
         out.left_front_mm = result.left_front_mm;
         out.left_rear_mm = result.left_rear_mm;
         out.right_front_mm = result.right_front_mm;
@@ -186,6 +193,10 @@ private:
                            EquipmentGeometryResult& result) const {
         if (point_count == 0U) {
             invalidateAll("NO_POINTCLOUD", result);
+            return;
+        }
+        if (point_count < static_cast<std::size_t>(config_.geometry.min_total_points)) {
+            invalidateAll("LOW_TOTAL_POINTS", result);
             return;
         }
         if (!config_.required_frame_id.empty() &&
@@ -212,7 +223,7 @@ private:
         result.left_rear_valid = false;
         result.right_front_valid = false;
         result.right_rear_valid = false;
-        result.quality = "lost";
+        result.quality = "LOST";
         result.invalid_reason = reason;
     }
 
@@ -229,8 +240,12 @@ private:
                                  result.left_rear_valid &&
                                  result.right_front_valid &&
                                  result.right_rear_valid;
+        result.left_front_clearance_m = result.left_front_mm / 1000.0;
+        result.left_rear_clearance_m = result.left_rear_mm / 1000.0;
+        result.right_front_clearance_m = result.right_front_mm / 1000.0;
+        result.right_rear_clearance_m = result.right_rear_mm / 1000.0;
         if (result.invalid_reason == "none" && !result.distances_valid) {
-            result.quality = result.attitude_valid ? "degraded" : "lost";
+            result.quality = result.attitude_valid ? "DEGRADED" : "INVALID";
             result.invalid_reason = "DISTANCE_JUMP_REJECTED";
         }
     }

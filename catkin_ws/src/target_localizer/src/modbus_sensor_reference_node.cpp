@@ -183,7 +183,7 @@ private:
         state.header.stamp = ros::Time::now();
         state.header.frame_id = frame_id_;
         state.source = "modbus_tcp";
-        state.quality = "lost";
+        state.quality = "LOST";
 
         bool any_valid = false;
         bool read_failed = false;
@@ -213,6 +213,10 @@ private:
                 state.left_rear_mm = readScaled(regs, base, left_rear_);
                 state.right_front_mm = readScaled(regs, base, right_front_);
                 state.right_rear_mm = readScaled(regs, base, right_rear_);
+                state.left_front_clearance_m = state.left_front_mm / 1000.0;
+                state.left_rear_clearance_m = state.left_rear_mm / 1000.0;
+                state.right_front_clearance_m = state.right_front_mm / 1000.0;
+                state.right_rear_clearance_m = state.right_rear_mm / 1000.0;
                 state.distances_valid = true;
                 state.left_front_valid = true;
                 state.left_rear_valid = true;
@@ -226,7 +230,7 @@ private:
         if (read_failed) {
             sensor_client_.close();
         }
-        state.quality = any_valid ? "good" : "lost";
+        state.quality = any_valid ? "OK" : "LOST";
         state.invalid_reason = any_valid ? "none" : "TCP_READ_FAILED";
         pub_.publish(state);
     }

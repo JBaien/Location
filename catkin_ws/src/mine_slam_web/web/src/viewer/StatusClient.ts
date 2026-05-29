@@ -23,6 +23,10 @@ export interface EquipmentMetricState {
     left_rear_valid?: boolean;
     right_front_valid?: boolean;
     right_rear_valid?: boolean;
+    left_front_clearance_m?: number;
+    left_rear_clearance_m?: number;
+    right_front_clearance_m?: number;
+    right_rear_clearance_m?: number;
     left_front_mm: number;
     left_rear_mm: number;
     right_front_mm: number;

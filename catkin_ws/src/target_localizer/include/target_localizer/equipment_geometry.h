@@ -37,6 +37,7 @@ struct EquipmentGeometryConfig {
     int min_ground_points = 20;
     int min_wall_points = 20;
     int min_distance_points = 5;
+    int min_total_points = 100;
     int forward_sign = 1;
     int left_sign = 1;
 };
@@ -55,6 +56,10 @@ struct EquipmentGeometryResult {
     double pitch_deg = 0.0;
     double yaw_deg = 0.0;
     double ground_plane_rmse = 0.0;
+    double left_front_clearance_m = 0.0;
+    double left_rear_clearance_m = 0.0;
+    double right_front_clearance_m = 0.0;
+    double right_rear_clearance_m = 0.0;
     double left_front_mm = 0.0;
     double left_rear_mm = 0.0;
     double right_front_mm = 0.0;
@@ -65,7 +70,7 @@ struct EquipmentGeometryResult {
     int left_rear_points = 0;
     int right_front_points = 0;
     int right_rear_points = 0;
-    std::string quality = "lost";
+    std::string quality = "LOST";
     std::string invalid_reason = "none";
     double wall_direction_diff_deg = 0.0;
 };

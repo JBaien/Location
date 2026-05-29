@@ -16,6 +16,12 @@ float64 pitch_deg
 float64 yaw_deg
 float64 ground_plane_rmse
 
+float64 left_front_clearance_m
+float64 left_rear_clearance_m
+float64 right_front_clearance_m
+float64 right_rear_clearance_m
+
+# Deprecated compatibility fields for current web display. Prefer *_clearance_m.
 float64 left_front_mm
 float64 left_rear_mm
 float64 right_front_mm

@@ -68,6 +68,7 @@ max_wall_direction_diff_deg: 8.0
 min_ground_points: 20
 min_wall_points: 20
 min_distance_points: 5
+min_total_points: 100
 forward_sign: 1
 left_sign: 1
 
