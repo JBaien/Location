@@ -344,7 +344,7 @@ min_good_inliers: 25
 | --- | --- | --- |
 | 输入输出话题 | `input_topic`、`target_frame`、`measurement_topic`、`xy_topic`、`equipment_state_topic` | 选择输入点云、输出标靶位移和设备状态的话题。 |
 | 圆柱 ROI | `roi_x_min/max`、`roi_y_min/max`、`roi_z_min/max` | 限定只在哪个空间盒子内寻找圆柱标靶。 |
-| 圆柱拟合 | `voxel_leaf`、`sor_mean_k`、`normal_k`、`max_iterations`、`cylinder_distance_threshold`、`radius_min/max` | 控制降采样、去噪、法线估计和 RANSAC 圆柱拟合。 |
+| 圆柱拟合 | `reflector_intensity_min`、`voxel_leaf`、`sor_mean_k`、`normal_k`、`max_iterations`、`cylinder_distance_threshold`、`radius_min/max` | 先按反光强度提取标靶候选点，再控制降采样、去噪、法线估计和 RANSAC 圆柱拟合。 |
 | 标靶输出 | `reference_z`、`zero_x`、`zero_y`、`min_good_inliers`、`good_residual_rms`、`lost_after_misses` | 控制圆柱中心取值高度、建零点和跟踪质量判定。 |
 | 设备状态 | `required_frame_id`、`enable_tf_transform`、`max_pointcloud_age_sec`、`min_total_points` | 检查输入点云坐标系、时延和总点数。 |
 | 地面/侧壁 | `ground_*`、`wall_*`、`max_ground_plane_rmse`、`min_ground_normal_z`、`max_wall_direction_diff_deg` | 从点云估计横滚、俯仰和偏航。 |

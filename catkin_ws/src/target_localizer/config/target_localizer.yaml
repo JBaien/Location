@@ -15,6 +15,7 @@ roi_z_min: -1.342
 roi_z_max: 0.858
 
 voxel_leaf: 0.02
+reflector_intensity_min: 180.0
 sor_mean_k: 20
 sor_stddev: 1.0
 normal_k: 20

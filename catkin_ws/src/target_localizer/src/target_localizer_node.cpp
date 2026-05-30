@@ -61,6 +61,7 @@ struct NodeConfig {
     double roi_z_min = -1.342;
     double roi_z_max = 0.858;
     double voxel_leaf = 0.02;
+    double reflector_intensity_min = 180.0;
     int sor_mean_k = 20;
     double sor_stddev = 1.0;
     int normal_k = 20;
@@ -145,6 +146,9 @@ private:
         private_nh_.param("roi_z_max", config_.roi_z_max, config_.roi_z_max);
         private_nh_.param("voxel_leaf", config_.voxel_leaf,
                           config_.voxel_leaf);
+        private_nh_.param("reflector_intensity_min",
+                          config_.reflector_intensity_min,
+                          config_.reflector_intensity_min);
         private_nh_.param("sor_mean_k", config_.sor_mean_k,
                           config_.sor_mean_k);
         private_nh_.param("sor_stddev", config_.sor_stddev,
@@ -175,8 +179,8 @@ private:
         CloudT::Ptr raw(new CloudT);
         pcl::fromROSMsg(*msg, *raw);
 
-        // 先做强先验 ROI：标靶按设计安装在设备后方，直接裁掉大部分巷道结构、
-        // 地面、车体和远处干扰，降低 RANSAC 被其他圆柱/管线误吸附的概率。
+        // 先做强先验 ROI 和反光强度筛选：标靶按设计安装在设备后方，
+        // 且反光贴强度明显高于普通巷道结构，先提取候选反光点再拟合圆柱。
         CloudT::Ptr roi = cropRoi(*raw);
         publishRoi(*roi, msg->header);
         filterCloud(roi);
@@ -185,7 +189,7 @@ private:
         bool detected = false;
         std::string reason;
         if (static_cast<int>(roi->size()) < config_.min_candidate_points) {
-            reason = "not_enough_roi_points";
+            reason = "not_enough_reflector_points";
         } else {
             detected = fitCylinder(*roi, model, reason);
         }
@@ -231,6 +235,10 @@ private:
             if (point.x < config_.roi_x_min || point.x > config_.roi_x_max ||
                 point.y < config_.roi_y_min || point.y > config_.roi_y_max ||
                 point.z < config_.roi_z_min || point.z > config_.roi_z_max) {
+                continue;
+            }
+            if (!std::isfinite(point.intensity) ||
+                point.intensity <= config_.reflector_intensity_min) {
                 continue;
             }
             output->push_back(point);

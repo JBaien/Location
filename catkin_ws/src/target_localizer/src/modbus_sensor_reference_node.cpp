@@ -127,22 +127,31 @@ public:
     }
 
 private:
+    template <typename T>
+    void loadParam(const std::string& name, T& value) {
+        const std::string nested_name = "modbus/" + name;
+        if (private_nh_.hasParam(nested_name)) {
+            private_nh_.param(nested_name, value, value);
+            return;
+        }
+        private_nh_.param(name, value, value);
+    }
+
     void loadRegister(const std::string& ns, RegisterConfig& config) {
-        private_nh_.param(ns + "/address", config.address, config.address);
-        private_nh_.param(ns + "/scale", config.scale, config.scale);
+        loadParam(ns + "/address", config.address);
+        loadParam(ns + "/scale", config.scale);
     }
 
     void loadConfig() {
-        private_nh_.param("output_topic", output_topic_, output_topic_);
-        private_nh_.param("frame_id", frame_id_, frame_id_);
-        private_nh_.param("rate_hz", rate_hz_, rate_hz_);
-        private_nh_.param("host", device_.host, device_.host);
-        private_nh_.param("port", device_.port, device_.port);
-        private_nh_.param("unit_id", device_.unit_id, device_.unit_id);
-        private_nh_.param("timeout_ms", device_.timeout_ms,
-                          device_.timeout_ms);
-        private_nh_.param("ins/enabled", ins_enabled_, ins_enabled_);
-        private_nh_.param("mmwave/enabled", radar_enabled_, radar_enabled_);
+        loadParam("output_topic", output_topic_);
+        loadParam("frame_id", frame_id_);
+        loadParam("rate_hz", rate_hz_);
+        loadParam("host", device_.host);
+        loadParam("port", device_.port);
+        loadParam("unit_id", device_.unit_id);
+        loadParam("timeout_ms", device_.timeout_ms);
+        loadParam("ins/enabled", ins_enabled_);
+        loadParam("mmwave/enabled", radar_enabled_);
         loadRegister("ins/roll", roll_);
         loadRegister("ins/pitch", pitch_);
         loadRegister("ins/yaw", yaw_);

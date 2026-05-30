@@ -20,6 +20,6 @@
         type="modbus_sensor_reference_node"
         name="modbus_sensor_reference_node"
         output="screen">
-    <rosparam file="$(arg config)" command="load" ns="modbus"/>
+    <rosparam file="$(arg config)" command="load"/>
   </node>
 </launch>

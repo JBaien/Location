@@ -146,6 +146,7 @@ docker/runtime/target_localizer/target_localizer.yaml
 | `roi_y_min`、`roi_y_max` | m | 目标圆柱 ROI 的 Y 范围，用于排除左右巷壁、设备结构和非目标点。 |
 | `roi_z_min`、`roi_z_max` | m | 目标圆柱 ROI 的 Z 范围，用于排除地面、顶板和高处干扰。 |
 | `voxel_leaf` | m | ROI 点云体素降采样叶子尺寸。值越大点越少、速度越快，但细节损失更大。 |
+| `reflector_intensity_min` | 强度值 | 反光点最小强度阈值。圆柱拟合只使用 ROI 内 `intensity` 大于该值的点，默认 `180.0`。 |
 | `sor_mean_k` | 点数 | 统计离群滤波的邻域点数。粉尘和孤立噪点多时可适当增大。 |
 | `sor_stddev` | 倍数 | 统计离群滤波标准差阈值。值越小剔除越严格。 |
 | `normal_k` | 点数 | 法线估计邻域点数，影响圆柱模型的法线约束稳定性。 |
