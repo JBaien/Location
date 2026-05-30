@@ -124,45 +124,91 @@ args="x y z yaw pitch roll lidar1 lidar3"
 docker/runtime/target_localizer/target_localizer.yaml
 ```
 
-常调参数包括 ROI 范围、圆柱半径范围、最小内点数、残差阈值、参考高度、建零点、前/后测量点距离、侧向 ROI、MODBUS TCP IP/端口/站号、寄存器地址和缩放系数。
+该文件被 `target_localizer_node`、`equipment_state_node` 和 `modbus_sensor_reference_node` 共同读取。Docker 部署时修改宿主机挂载目录中的这个文件，重启容器后生效；源码本地运行时对应文件为 `catkin_ws/src/target_localizer/config/target_localizer.yaml`。
 
-前后测量点配置示例：
+基础输入输出参数：
 
-```yaml
-front_sample_distance_m: 2.0
-rear_sample_distance_m: 2.0
-sample_window_x_m: 0.4
-forward_sign: 1
-left_sign: 1
-equipment_half_width_m: 1.2
-min_valid_clearance_m: -0.2
-max_ground_plane_rmse: 0.08
-min_ground_normal_z: 0.85
-max_wall_direction_diff_deg: 8.0
-required_frame_id: base_link
-enable_tf_transform: false
-max_pointcloud_age_sec: 0.5
-distance_filter_alpha: 0.3
-max_distance_jump_m: 0.3
-min_total_points: 100
-```
+| 参数 | 单位/类型 | 含义 |
+| --- | --- | --- |
+| `input_topic` | ROS topic | 输入融合点云，默认 `/points_raw`。圆柱定位和设备状态估计都订阅该点云。 |
+| `target_frame` | frame_id | 业务计算目标坐标系，默认 `base_link`。定位输出和设备状态计算都按该坐标系理解。 |
+| `measurement_topic` | ROS topic | 发布圆柱检测原始测量值，包含中心、内点数、残差等。 |
+| `xy_topic` | ROS topic | 发布业务用标靶 XY 位移，默认 `/target_xy`。 |
+| `status_topic` | ROS topic | 发布标靶定位状态，默认 `/target_status`。 |
+| `marker_topic` | ROS topic | 发布 RViz 可视化 Marker。 |
+| `roi_topic` | ROS topic | 发布裁剪后的目标 ROI 点云，便于现场检查标靶是否进入有效区域。 |
 
-这些参数含义如下：
+圆柱标靶检测参数：
 
-- `front_sample_distance_m`：前测量点距离设备中心的前向距离，单位米，用于计算左前、右前距离。
-- `rear_sample_distance_m`：后测量点距离设备中心的后向距离，单位米，用于计算左后、右后距离。
-- `sample_window_x_m`：前/后测量点沿 X 方向的采样窗口宽度，单位米。例如前测量点在 2.0 m、窗口为 0.4 m 时，会取约 1.8 m 到 2.2 m 范围内的点。
-- `forward_sign`：定义设备“前方”对应的 X 轴方向。`1` 表示 +X 为前方，`-1` 表示 -X 为前方。
-- `left_sign`：旧配置兼容项。当前算法在 `base_link` 下固定使用 +Y 为左侧、-Y 为右侧，不再用该参数切换左右方向。
-- `equipment_half_width_m`：设备半宽，单位米。四角距离会从雷达坐标到侧壁距离中扣除该值，显示为设备外轮廓到侧壁的剩余距离。
-- `min_valid_clearance_m`：允许的最小有效剩余距离，单位米。轻微负值可保留用于提示接近或越界；明显低于该阈值会标记为无效。
-- `max_wall_direction_diff_deg`：左右墙 PCA 主方向最大允许夹角，超过后偏航角无效。
-- `required_frame_id`：设备状态计算要求的点云坐标系，当前部署为 `base_link`。
-- `enable_tf_transform`：是否在输入点云不是 `required_frame_id` 时尝试 TF 转换。默认关闭，frame 不匹配直接无效；开启后 TF 失败会标记 `TF_LOOKUP_FAILED`。
-- `max_pointcloud_age_sec`：输入点云最大允许延迟，超过后整体状态无效。
-- `distance_filter_alpha`：距离一阶滤波系数，越小越平滑，越大越跟手。
-- `max_distance_jump_m`：距离单帧最大允许跳变，超过后该方向距离无效。
-- `min_total_points`：整帧融合点云最小点数，低于该值时整体状态无效。
+| 参数 | 单位/类型 | 含义 |
+| --- | --- | --- |
+| `roi_x_min`、`roi_x_max` | m | 目标圆柱 ROI 的 X 范围。当前默认 `-12.0` 到 `-4.0`，表示只在设备后方一定距离内找标靶。 |
+| `roi_y_min`、`roi_y_max` | m | 目标圆柱 ROI 的 Y 范围，用于排除左右巷壁、设备结构和非目标点。 |
+| `roi_z_min`、`roi_z_max` | m | 目标圆柱 ROI 的 Z 范围，用于排除地面、顶板和高处干扰。 |
+| `voxel_leaf` | m | ROI 点云体素降采样叶子尺寸。值越大点越少、速度越快，但细节损失更大。 |
+| `sor_mean_k` | 点数 | 统计离群滤波的邻域点数。粉尘和孤立噪点多时可适当增大。 |
+| `sor_stddev` | 倍数 | 统计离群滤波标准差阈值。值越小剔除越严格。 |
+| `normal_k` | 点数 | 法线估计邻域点数，影响圆柱模型的法线约束稳定性。 |
+| `max_iterations` | 次 | 圆柱 RANSAC 最大迭代次数。值越大越稳但耗时更高。 |
+| `normal_distance_weight` | 权重 | PCL 圆柱分割中法线距离权重。值越大越依赖法线一致性。 |
+| `cylinder_distance_threshold` | m | 点到圆柱模型的最大内点距离。值越小拟合越严格，遮挡或噪声大时可能丢失。 |
+| `radius_min`、`radius_max` | m | 允许的圆柱半径范围，应按标靶实际半径和点云误差设置。 |
+| `min_candidate_points` | 点数 | ROI 经过降采样和滤波后参与圆柱拟合的最小点数，低于该值直接认为无有效候选。 |
+| `reference_z` | m | 从拟合圆柱轴线取业务中心点时使用的参考高度。输出的 `cx/cy` 是圆柱轴线在该高度处的位置。 |
+| `zero_x`、`zero_y` | m | 建零点坐标。`/target_xy` 中的 `dx/dy` 按检测中心相对该点计算。 |
+
+目标跟踪与质量门限：
+
+| 参数 | 单位/类型 | 含义 |
+| --- | --- | --- |
+| `min_good_inliers` | 点数 | 判定单帧圆柱测量为 `GOOD` 的最小内点数。低于该值但仍可输出时通常为 `DEGRADED`。 |
+| `good_residual_rms` | m | 判定单帧圆柱测量为 `GOOD` 的最大残差均方根。 |
+| `lost_after_misses` | 帧 | 连续多少帧没有有效圆柱测量后进入 `LOST`。 |
+| `hold_duration` | s | 短时丢失时按上一状态和速度保活的时间窗口。 |
+
+设备状态输入检查参数：
+
+| 参数 | 单位/类型 | 含义 |
+| --- | --- | --- |
+| `equipment_state_topic` | ROS topic | 发布点云估计的设备姿态和四角距离，默认 `/equipment_state`。 |
+| `required_frame_id` | frame_id | 设备状态计算要求的输入点云坐标系，当前部署为 `base_link`。 |
+| `enable_tf_transform` | bool | 输入点云不是 `required_frame_id` 时是否尝试 TF 转换。默认关闭，frame 不匹配直接无效；开启后 TF 失败标记为 `TF_LOOKUP_FAILED`。 |
+| `max_pointcloud_age_sec` | s | 输入点云最大允许延迟，超过后整体状态无效。 |
+| `min_total_points` | 点数 | 整帧融合点云最小点数，低于该值时整体状态无效。 |
+
+地面和侧壁 ROI 参数：
+
+| 参数 | 单位/类型 | 含义 |
+| --- | --- | --- |
+| `ground_x_min`、`ground_x_max` | m | 地面点 ROI 的 X 范围，用于估计横滚和俯仰。 |
+| `ground_y_min`、`ground_y_max` | m | 地面点 ROI 的 Y 范围。 |
+| `ground_z_min`、`ground_z_max` | m | 地面点 ROI 的 Z 范围。 |
+| `wall_x_min`、`wall_x_max` | m | 侧壁点 ROI 的 X 范围，用于估计偏航和辅助距离判断。 |
+| `wall_y_abs_min`、`wall_y_abs_max` | m | 侧壁点 ROI 的 `abs(y)` 范围。用绝对值同时筛选左右墙，排除车体附近点和过远点。 |
+| `wall_z_min`、`wall_z_max` | m | 侧壁点 ROI 的 Z 范围。 |
+| `max_ground_plane_rmse` | m | 地面平面拟合最大允许 RMSE，超过后横滚/俯仰无效。 |
+| `min_ground_normal_z` | 比值 | 地面法向量 Z 分量最小值。值越接近 1，要求地面越接近水平。 |
+| `max_wall_direction_diff_deg` | deg | 左右墙 PCA 主方向最大允许夹角，超过后认为侧壁方向不一致，偏航角无效。 |
+| `min_ground_points` | 点数 | 地面 ROI 最小有效点数。 |
+| `min_wall_points` | 点数 | 侧壁 ROI 最小有效点数。 |
+
+四角距离参数：
+
+| 参数 | 单位/类型 | 含义 |
+| --- | --- | --- |
+| `front_sample_distance_m` | m | 前测量点距离设备中心的前向距离，用于计算左前、右前距离。 |
+| `rear_sample_distance_m` | m | 后测量点距离设备中心的后向距离，用于计算左后、右后距离。 |
+| `sample_window_x_m` | m | 前/后测量点沿 X 方向的采样窗口宽度。例如前测量点为 `2.0`、窗口为 `0.4` 时，取约 `1.8` 到 `2.2` m 范围内的点。 |
+| `side_y_abs_min`、`side_y_abs_max` | m | 四角距离采样时侧向点的 `abs(y)` 范围。 |
+| `side_z_min`、`side_z_max` | m | 四角距离采样时侧向点的 Z 范围。 |
+| `distance_percentile` | 0 到 1 | 侧向距离取值分位数，默认 `0.1`。比直接取最小值更抗孤立噪点。 |
+| `equipment_half_width_m` | m | 设备半宽。输出清距为 `侧壁距离 - equipment_half_width_m`，表示设备外轮廓到侧壁的剩余距离。 |
+| `min_valid_clearance_m` | m | 允许的最小有效剩余距离。轻微负值可用于提示接近或越界，明显低于该阈值会标记无效。 |
+| `min_distance_points` | 点数 | 每个方向四角距离的最小有效点数。 |
+| `distance_filter_alpha` | 0 到 1 | 距离一阶滤波系数。越小越平滑，越大越跟手。 |
+| `max_distance_jump_m` | m | 距离单帧最大允许跳变，超过后该方向距离无效。 |
+| `forward_sign` | `1` 或 `-1` | 定义设备“前方”对应的 X 轴方向。`1` 表示 +X 为前方，`-1` 表示 -X 为前方。 |
+| `left_sign` | `1` 或 `-1` | 旧配置兼容项。当前算法在 `base_link` 下固定使用 +Y 为左侧、-Y 为右侧，不再用该参数切换左右方向。 |
 
 ## 设备姿态与四角距离计算
 
@@ -231,10 +277,15 @@ modbus:
 
 字段说明：
 
+- `output_topic`：MODBUS 真实参考值输出话题，默认 `/sensor_reference`。
+- `frame_id`：`/sensor_reference` 消息使用的坐标系名称，默认 `base_link`。
+- `rate_hz`：MODBUS 轮询和发布频率，单位 Hz。
 - `host`：TCP 设备 IP 地址。当前现场方案中惯导和毫米波共用 `modbus.host`，因此现场换 IP 时只修改这一项。
 - `port`：MODBUS TCP 端口，常用 `502`。当前现场方案中惯导和毫米波共用 `modbus.port`，因此现场换端口时只修改这一项。
 - `unit_id`：MODBUS 从站 ID。当前现场方案中惯导和毫米波共用 `modbus.unit_id`，因此只配置一次。
 - `timeout_ms`：TCP 读写超时时间，单位毫秒。当前现场方案中惯导和毫米波共用 `modbus.timeout_ms`，因此只配置一次。
+- `ins.enabled`：是否读取惯导寄存器。为 `false` 时惯导角度字段标记为 `SENSOR_DISABLED`。
+- `mmwave.enabled`：是否读取 4 路毫米波寄存器。为 `false` 时四角真实距离字段标记为 `SENSOR_DISABLED`。
 - `address`：寄存器地址，必须按现场设备协议表填写。
 - `scale`：寄存器原始值到显示值的换算系数。例如惯导角度原始值为 1234、`scale: 0.01` 时，显示为 12.34 度；毫米波距离通常按毫米输出，可使用 `scale: 1.0`。
 
