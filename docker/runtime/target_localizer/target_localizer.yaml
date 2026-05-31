@@ -7,12 +7,12 @@ status_topic: /target_status
 marker_topic: /target_marker
 roi_topic: /target_cloud_roi
 
-roi_x_min: -12.0
-roi_x_max: -4.0
-roi_y_min: -2.0
-roi_y_max: 2.0
-roi_z_min: -1.342
-roi_z_max: 0.858
+roi_x_min: -10.0
+roi_x_max: 10.0
+roi_y_min: -5.0
+roi_y_max: 5.0
+roi_z_min: -3.0
+roi_z_max: 3.0
 
 voxel_leaf: 0.02
 reflector_intensity_min: 180.0
@@ -27,7 +27,7 @@ radius_max: 0.155
 min_candidate_points: 20
 
 reference_z: -0.142
-zero_x: -8.0
+zero_x: 0.0
 zero_y: 0.0
 
 min_good_inliers: 25
@@ -40,7 +40,7 @@ required_frame_id: base_link
 enable_tf_transform: false
 max_pointcloud_age_sec: 0.5
 distance_filter_alpha: 0.3
-max_distance_jump_m: 0.3
+max_distance_jump_m: 0.5
 ground_x_min: -4.0
 ground_x_max: 4.0
 ground_y_min: -2.5
@@ -56,9 +56,9 @@ wall_z_max: 2.5
 front_sample_distance_m: 2.0
 rear_sample_distance_m: 2.0
 sample_window_x_m: 0.4
-side_y_abs_min: 0.2
+side_y_abs_min: 1.2
 side_y_abs_max: 5.0
-side_z_min: -1.5
+side_z_min: -0.1
 side_z_max: 1.5
 distance_percentile: 0.1
 equipment_half_width_m: 1.2
