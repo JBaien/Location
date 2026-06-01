@@ -1,0 +1,9 @@
+<library path="lib/libdriver_nodelet">
+  <class name="lidar_driver/DriverNodelet"
+         type="lidar_driver::DriverNodelet"
+         base_class_type="nodelet::Nodelet">
+    <description> 
+      Publish raw lidar data packets.
+    </description>
+  </class>
+</library>

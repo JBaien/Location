@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>lidar_driver</name>
+  <version>1.5.2</version>
+  <description>
+    ROS device driver for lidar 3D LIDARs.
+  </description>
+  <maintainer email="king@autonomoustuff.com">Jun</maintainer>
+  <author>lidar</author>
+  <license>BSD</license>
+
+  <url type="website">http://www.ros.org/wiki/lidar_driver</url>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>roslint</build_depend>
+
+  <depend>diagnostic_updater</depend>
+  <depend>dynamic_reconfigure</depend>
+  <depend>libpcap</depend>
+  <depend>nodelet</depend>
+  <depend>roscpp</depend>
+  <depend>tf</depend>
+  <depend>lidar_msgs</depend>
+
+  <test_depend>roslaunch</test_depend>
+  <test_depend>rostest</test_depend>
+
+  <export>
+    <nodelet plugin="${prefix}/nodelet_lidar.xml"/>
+  </export>
+</package>
