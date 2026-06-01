@@ -328,21 +328,11 @@ private:
     }
 
     void applyAttitudeFilter(EquipmentGeometryResult& result) {
-        const bool roll_jump = filterAngle(result.roll_valid, result.roll_deg,
-                                           last_roll_deg_, false);
-        const bool pitch_jump = filterAngle(result.pitch_valid, result.pitch_deg,
-                                            last_pitch_deg_, false);
-        const bool yaw_jump = filterAngle(result.yaw_valid, result.yaw_deg,
-                                          last_yaw_deg_, true);
+        filterAngle(result.roll_valid, result.roll_deg, last_roll_deg_, false);
+        filterAngle(result.pitch_valid, result.pitch_deg, last_pitch_deg_, false);
+        filterAngle(result.yaw_valid, result.yaw_deg, last_yaw_deg_, true);
         result.attitude_valid =
             result.roll_valid || result.pitch_valid || result.yaw_valid;
-        if ((roll_jump || pitch_jump || yaw_jump) &&
-            (result.invalid_reason == "none" ||
-             result.invalid_reason == "PARTIAL_VALID")) {
-            result.overall_status = result.attitude_valid ? "DEGRADED" : "INVALID";
-            result.quality = result.overall_status;
-            result.invalid_reason = "ATTITUDE_JUMP_REJECTED";
-        }
     }
 
     bool filterAngle(bool& valid, double& value_deg, double& last_deg,
