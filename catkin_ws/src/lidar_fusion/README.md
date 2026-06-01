@@ -1,6 +1,6 @@
 # LiDAR Fusion
 
-该包提供一个面向煤矿井下长巷道 SLAM 前端输入的多激光雷达点云融合节点。新节点以原有 `lidar_fusion` 两雷达 TF 融合思路为基础，改造成支持 2 路 / 3 路 TM16 点云输入，默认输出给 FAST-LIO / LIO-SAM 类前端使用的 `/points_raw`。
+该包提供一个面向煤矿井下长巷道 SLAM 前端输入的多激光雷达点云融合节点。新节点以原有 `lidar_fusion` 两雷达 TF 融合思路为基础，改造成支持 2 路 / 3 路原始雷达点云输入，默认输出给 FAST-LIO / LIO-SAM 类前端使用的 `/points_raw`。
 
 旧的 `lidar_fusion_node` 仍保留；工程推荐使用新的 `multi_lidar_fusion_node`。
 
@@ -27,12 +27,20 @@ base_link
         └── lidar3
 ```
 
-每个 TM16 driver 输出点云必须带不同 `frame_id`：
+每个原始雷达 driver 输出点云必须带不同 `frame_id`。Timoo 驱动默认话题为：
 
 ```text
 /lidar1/timoo_points  frame_id: lidar1
 /lidar2/timoo_points  frame_id: lidar2
 /lidar3/timoo_points  frame_id: lidar3
+```
+
+tmlidar 驱动默认话题为：
+
+```text
+/lidar1/lidar_points  frame_id: lidar1
+/lidar2/lidar_points  frame_id: lidar2
+/lidar3/lidar_points  frame_id: lidar3
 ```
 
 静态外参由独立标定 launch 维护，不建议写死在融合节点里：
@@ -67,6 +75,13 @@ roslaunch lidar_fusion multi_lidar_fusion.launch \
 
 ```text
 config/multi_lidar_fusion.yaml
+```
+
+Docker 运行时按驱动族拆分配置：
+
+```text
+/config/lidar_fusion/multi_lidar_fusion_timoo.yaml
+/config/lidar_fusion/multi_lidar_fusion_tmlidar.yaml
 ```
 
 参数示例：
@@ -123,7 +138,7 @@ source devel/setup.bash
 
 ## 启动
 
-先启动三台 TM16，并确认 topic 与 frame：
+先启动三台雷达，并确认 topic 与 frame：
 
 ```bash
 rostopic hz /lidar1/timoo_points
@@ -131,6 +146,8 @@ rostopic echo -n1 /lidar1/timoo_points/header
 rostopic echo -n1 /lidar2/timoo_points/header
 rostopic echo -n1 /lidar3/timoo_points/header
 ```
+
+tmlidar 驱动对应检查 `/lidarN/lidar_points`。
 
 再启动静态 TF 外参，然后启动融合节点：
 

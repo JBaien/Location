@@ -7,23 +7,52 @@
   <arg name="enable_web_bridge" default="true"/>
   <arg name="enable_record" default="false"/>
 
-  <arg name="driver_launch" default="/config/launch/driver_tm16_multi3.launch"/>
+  <!-- Select the raw LiDAR driver family. Valid values: timoo, tmlidar. -->
+  <arg name="driver_family" default="timoo"/>
+
+  <arg name="timoo_driver_launch" default="/config/launch/driver_timoo_multi3.launch"/>
+  <arg name="tmlidar_driver_launch" default="/config/launch/driver_tmlidar_multi3.launch"/>
+  <arg name="driver_launch" default=""/>
   <arg name="lidar_tf_launch" default="/config/launch/lidar_static_tf.launch"/>
-  <arg name="fusion_config" default="/config/lidar_fusion/multi_lidar_fusion.yaml"/>
+  <arg name="timoo_fusion_config" default="/config/lidar_fusion/multi_lidar_fusion_timoo.yaml"/>
+  <arg name="tmlidar_fusion_config" default="/config/lidar_fusion/multi_lidar_fusion_tmlidar.yaml"/>
+  <arg name="fusion_config" default=""/>
   <arg name="target_config" default="/config/target_localizer/target_localizer.yaml"/>
   <arg name="web_config" default="/config/web/web_viewer.yaml"/>
-  <arg name="record_launch" default="/config/launch/record_points.launch"/>
+  <arg name="timoo_record_launch" default="/config/launch/record_points_timoo.launch"/>
+  <arg name="tmlidar_record_launch" default="/config/launch/record_points_tmlidar.launch"/>
+  <arg name="record_launch" default=""/>
 
-  <group if="$(arg enable_driver)">
+  <group if="$(eval arg('enable_driver') and arg('driver_launch') != '')">
     <include file="$(arg driver_launch)"/>
+  </group>
+  <group if="$(eval arg('enable_driver') and arg('driver_launch') == '' and arg('driver_family') == 'timoo')">
+    <include file="$(arg timoo_driver_launch)"/>
+  </group>
+  <group if="$(eval arg('enable_driver') and arg('driver_launch') == '' and arg('driver_family') == 'tmlidar')">
+    <include file="$(arg tmlidar_driver_launch)"/>
   </group>
 
   <group if="$(arg enable_fusion)">
     <include file="$(arg lidar_tf_launch)"/>
-    <include file="$(find lidar_fusion)/launch/multi_lidar_fusion.launch">
-      <arg name="config" value="$(arg fusion_config)"/>
-      <arg name="publish_static_tf" value="false"/>
-    </include>
+    <group if="$(eval arg('fusion_config') != '')">
+      <include file="$(find lidar_fusion)/launch/multi_lidar_fusion.launch">
+        <arg name="config" value="$(arg fusion_config)"/>
+        <arg name="publish_static_tf" value="false"/>
+      </include>
+    </group>
+    <group if="$(eval arg('fusion_config') == '' and arg('driver_family') == 'timoo')">
+      <include file="$(find lidar_fusion)/launch/multi_lidar_fusion.launch">
+        <arg name="config" value="$(arg timoo_fusion_config)"/>
+        <arg name="publish_static_tf" value="false"/>
+      </include>
+    </group>
+    <group if="$(eval arg('fusion_config') == '' and arg('driver_family') == 'tmlidar')">
+      <include file="$(find lidar_fusion)/launch/multi_lidar_fusion.launch">
+        <arg name="config" value="$(arg tmlidar_fusion_config)"/>
+        <arg name="publish_static_tf" value="false"/>
+      </include>
+    </group>
   </group>
 
   <group if="$(arg enable_target_localizer)">
@@ -38,7 +67,13 @@
     </include>
   </group>
 
-  <group if="$(arg enable_record)">
+  <group if="$(eval arg('enable_record') and arg('record_launch') != '')">
     <include file="$(arg record_launch)"/>
+  </group>
+  <group if="$(eval arg('enable_record') and arg('record_launch') == '' and arg('driver_family') == 'timoo')">
+    <include file="$(arg timoo_record_launch)"/>
+  </group>
+  <group if="$(eval arg('enable_record') and arg('record_launch') == '' and arg('driver_family') == 'tmlidar')">
+    <include file="$(arg tmlidar_record_launch)"/>
   </group>
 </launch>

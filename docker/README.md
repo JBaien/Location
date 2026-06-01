@@ -262,8 +262,10 @@ docker/runtime/bags:/data/bags
 现场主要修改这些文件：
 
 - `docker/runtime/launch/driver_tm16_multi3.launch`
+- `docker/runtime/launch/driver_tmlidar_multi3.launch`
 - `docker/runtime/launch/bringup.launch`
-- `docker/runtime/lidar_fusion/multi_lidar_fusion.yaml`
+- `docker/runtime/lidar_fusion/multi_lidar_fusion_timoo.yaml`
+- `docker/runtime/lidar_fusion/multi_lidar_fusion_tmlidar.yaml`
 - `docker/runtime/target_localizer/target_localizer.yaml`
 - `docker/runtime/web/web_viewer.yaml`
 
@@ -288,6 +290,13 @@ vim /opt/mine-lidar/docker/runtime/launch/driver_tm16_multi3.launch
 docker compose -f /opt/mine-lidar/docker/docker-compose.arm64.yml restart
 ```
 
+如需改用 tmlidar 驱动，把 `docker/runtime/launch/bringup.launch` 中的 `driver_family` 设为 `tmlidar`，并修改：
+
+```bash
+vim /opt/mine-lidar/docker/runtime/launch/driver_tmlidar_multi3.launch
+docker compose -f /opt/mine-lidar/docker/docker-compose.arm64.yml restart
+```
+
 常用字段：
 
 ```xml
@@ -302,7 +311,7 @@ docker compose -f /opt/mine-lidar/docker/docker-compose.arm64.yml restart
 修改融合参数：
 
 ```bash
-vim /opt/mine-lidar/docker/runtime/lidar_fusion/multi_lidar_fusion.yaml
+vim /opt/mine-lidar/docker/runtime/lidar_fusion/multi_lidar_fusion_timoo.yaml
 docker compose -f /opt/mine-lidar/docker/docker-compose.arm64.yml restart
 ```
 
@@ -318,6 +327,8 @@ output_frame_id: base_link
 sync_slop: 0.05
 min_points_per_lidar: 10
 ```
+
+tmlidar 驱动对应的融合配置是 `multi_lidar_fusion_tmlidar.yaml`，输入话题为 `/lidar1/lidar_points`、`/lidar2/lidar_points`、`/lidar3/lidar_points`。
 
 修改圆柱标靶定位参数：
 
@@ -478,12 +489,20 @@ rostopic list
 /tf_static
 ```
 
-如果启用了雷达驱动，还应看到：
+如果启用了默认 Timoo 雷达驱动，还应看到：
 
 ```text
 /lidar1/timoo_points
 /lidar2/timoo_points
 /lidar3/timoo_points
+```
+
+如果在 `bringup.launch` 中设置 `driver_family:=tmlidar`，对应原始点云话题为：
+
+```text
+/lidar1/lidar_points
+/lidar2/lidar_points
+/lidar3/lidar_points
 ```
 
 检查点云频率：
@@ -508,7 +527,7 @@ docker logs -f --tail 200 mine-lidar-runtime-arm64
 callbacks=0, published=0
 ```
 
-通常表示没有收到三路原始点云，优先检查雷达供电、网线、主机 IP、UDP 端口、host 网络和 `driver_tm16_multi3.launch`。
+通常表示没有收到三路原始点云，优先检查雷达供电、网线、主机 IP、UDP 端口、host 网络，以及当前 `driver_family` 对应的 `driver_tm16_multi3.launch` 或 `driver_tmlidar_multi3.launch`。
 
 ## 录制点云
 
@@ -541,7 +560,7 @@ bag 会写到：
 docker/runtime/bags
 ```
 
-默认录制：
+默认 Timoo 驱动录制：
 
 - `/lidar1/timoo_points`
 - `/lidar2/timoo_points`
@@ -555,6 +574,8 @@ docker/runtime/bags
 - `/tf`
 - `/tf_static`
 - `/rosout`
+
+tmlidar 驱动录制时，三路原始点云改为 `/lidar1/lidar_points`、`/lidar2/lidar_points`、`/lidar3/lidar_points`。
 
 用于多雷达标定时，必须保留三个原始雷达点云和 `/tf_static`，不要只录融合后的 `/points_raw`。
 

@@ -1,10 +1,11 @@
 # 矿用三雷达标靶定位系统
 
-本仓库是一个 ROS1 工程，用于 TM16 三雷达采集、点云融合、圆柱标靶 XY 位移测量、设备姿态/四角距离估计、Web 点云驾驶舱和 Docker 部署。总体方案依据 `SLAM.md`：三路雷达先融合为 `/points_raw`，再由定位节点输出标靶位移和设备区域状态。
+本仓库是一个 ROS1 工程，用于三雷达采集、点云融合、圆柱标靶 XY 位移测量、设备姿态/四角距离估计、Web 点云驾驶舱和 Docker 部署。总体方案依据 `SLAM.md`：三路雷达先融合为 `/points_raw`，再由定位节点输出标靶位移和设备区域状态。
 
 ## 目录结构
 
-- `catkin_ws/src/timoo*`：TM16 雷达驱动、点云转换和驱动消息定义。
+- `catkin_ws/src/timoo*`：Timoo TM16 雷达驱动、点云转换和驱动消息定义。
+- `catkin_ws/src/lidar_*`：tmlidar 驱动、点云转换、LaserScan 转换和驱动消息定义。
 - `catkin_ws/src/lidar_fusion`：同步 2 路或 3 路雷达点云，通过 TF 统一到 `base_link`，发布 `/points_raw`。
 - `catkin_ws/src/target_localizer`：订阅 `/points_raw`，完成 ROI 裁剪、圆柱拟合、跟踪滤波、设备姿态/四角距离估计和 MODBUS TCP 真实传感器接入。
 - `catkin_ws/src/mine_slam_web`：ROS 点云到 WebSocket 的桥接，以及浏览器自适应点云驾驶舱。
@@ -66,14 +67,14 @@ docker compose -f docker-compose.arm64.yml up -d
 
 ## 运行
 
-默认 Docker 启动会同时拉起 TM16 驱动、三雷达融合、圆柱标靶定位、设备状态估计、MODBUS TCP 参考数据节点、WebSocket 桥和静态 Web 服务。
+默认 Docker 启动会同时拉起 Timoo TM16 驱动、三雷达融合、圆柱标靶定位、设备状态估计、MODBUS TCP 参考数据节点、WebSocket 桥和静态 Web 服务。需要改用 tmlidar 驱动时，在启动参数或 `docker/runtime/launch/bringup.launch` 中设置 `driver_family:=tmlidar`；算法侧仍订阅融合后的 `/points_raw`。
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d
 docker logs -f --tail 200 mine-lidar-runtime
 ```
 
-关键话题：
+关键话题（默认 Timoo 驱动）：
 
 - `/lidar1/timoo_points`, `/lidar2/timoo_points`, `/lidar3/timoo_points`
 - `/points_raw`
@@ -82,10 +83,12 @@ docker logs -f --tail 200 mine-lidar-runtime
 - `/sensor_reference`：MODBUS TCP 接入的惯导和 4 路毫米波真实参考值。
 - `/diagnostics`
 
+tmlidar 驱动模式下，三路原始点云话题改为 `/lidar1/lidar_points`、`/lidar2/lidar_points`、`/lidar3/lidar_points`，融合输出和算法输入仍是 `/points_raw`。
+
 点云处理链路：
 
 ```text
-三路 TM16 点云
+三路原始雷达点云
   -> multi_lidar_fusion_node
   -> /points_raw
   -> target_localizer_node + equipment_state_node
@@ -99,8 +102,19 @@ Web 页面采用左右双路数据显示：左侧显示点云计算值，右侧�
 三雷达融合参数：
 
 ```text
-docker/runtime/lidar_fusion/multi_lidar_fusion.yaml
+docker/runtime/lidar_fusion/multi_lidar_fusion_timoo.yaml
+docker/runtime/lidar_fusion/multi_lidar_fusion_tmlidar.yaml
 ```
+
+`driver_family:=timoo` 使用 `/lidarN/timoo_points`；`driver_family:=tmlidar` 使用 `/lidarN/lidar_points`。也可以通过 `driver_launch` 和 `fusion_config` 指定自定义驱动 launch 与融合 YAML。
+
+驱动切换只需要改 `docker/runtime/launch/bringup.launch`：
+
+```xml
+<arg name="driver_family" default="tmlidar"/>
+```
+
+如果现场 `/config` 已经存在，容器启动脚本不会覆盖已有配置；升级后需要把新增的 `driver_tmlidar_multi3.launch`、`multi_lidar_fusion_tmlidar.yaml` 和对应录包 launch 同步到现场挂载目录。
 
 三雷达 TF 外参关系不在融合 YAML 中，而是在 Docker 挂载 launch 中修改：
 
