@@ -20,7 +20,11 @@ enum class TargetStatus : std::uint8_t {
 // 阈值来自 target_localizer.yaml，便于现场按点数、粉尘、遮挡情况调整。
 struct TrackerConfig {
     int min_good_inliers = 25;
+    int min_update_inliers = 8;
     double good_residual_rms = 0.015;
+    double max_update_residual_rms = 0.05;
+    double max_update_jump_m = 1.0;
+    double max_velocity_mps = 2.0;
     int lost_after_misses = 3;
     double hold_duration = 0.3;
 };
@@ -59,8 +63,11 @@ public:
     bool hasState() const;
 
 private:
+    bool acceptsMeasurement(const Measurement& measurement) const;
+
     TrackerConfig config_;
     TrackerOutput state_;
+    double last_measurement_stamp_ = 0.0;
     int consecutive_misses_ = 0;
     bool initialized_ = false;
 };

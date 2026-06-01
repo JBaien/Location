@@ -8,7 +8,7 @@
   <arg name="enable_record" default="false"/>
 
   <!-- Select the raw LiDAR driver family. Valid values: timoo, tmlidar. -->
-  <arg name="driver_family" default="timoo"/>
+  <arg name="driver_family" default="tmlidar"/>
 
   <arg name="timoo_driver_launch" default="/config/launch/driver_timoo_multi3.launch"/>
   <arg name="tmlidar_driver_launch" default="/config/launch/driver_tmlidar_multi3.launch"/>

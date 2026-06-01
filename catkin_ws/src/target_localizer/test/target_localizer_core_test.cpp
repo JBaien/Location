@@ -46,6 +46,74 @@ TEST(TargetTrackerTest, EmitsGoodThenLostAfterConsecutiveMisses) {
     EXPECT_EQ(tracker.markMissed(10.3).status, TargetStatus::LOST);
 }
 
+TEST(TargetTrackerTest, RejectsLowInlierOutlierWithoutUpdatingVelocity) {
+    TrackerConfig config;
+    config.min_good_inliers = 10;
+    config.min_update_inliers = 8;
+    config.max_update_residual_rms = 0.05;
+    config.max_update_jump_m = 1.0;
+    config.max_velocity_mps = 2.0;
+    config.lost_after_misses = 2;
+    config.hold_duration = 0.3;
+
+    TargetTracker tracker(config);
+    Measurement good;
+    good.stamp = 10.0;
+    good.cx = 0.7;
+    good.cy = -0.1;
+    good.inlier_count = 20;
+    good.residual_rms = 0.01;
+    EXPECT_EQ(tracker.update(good).status, TargetStatus::GOOD);
+
+    Measurement outlier = good;
+    outlier.stamp = 10.1;
+    outlier.cx = -21.0;
+    outlier.cy = -91.0;
+    outlier.inlier_count = 3;
+    const TrackerOutput held = tracker.update(outlier);
+    EXPECT_EQ(held.status, TargetStatus::DEGRADED);
+    EXPECT_NEAR(held.cx, 0.7, 1e-9);
+    EXPECT_NEAR(held.cy, -0.1, 1e-9);
+    EXPECT_NEAR(held.vx, 0.0, 1e-9);
+    EXPECT_NEAR(held.vy, 0.0, 1e-9);
+}
+
+TEST(TargetTrackerTest, ClearsVelocityAndStopsExtrapolatingWhenLost) {
+    TrackerConfig config;
+    config.min_good_inliers = 10;
+    config.min_update_inliers = 8;
+    config.lost_after_misses = 2;
+    config.hold_duration = 0.5;
+
+    TargetTracker tracker(config);
+    Measurement first;
+    first.stamp = 10.0;
+    first.cx = 0.0;
+    first.cy = 0.0;
+    first.inlier_count = 20;
+    first.residual_rms = 0.01;
+    tracker.update(first);
+
+    Measurement second = first;
+    second.stamp = 10.1;
+    second.cx = 0.1;
+    tracker.update(second);
+
+    const TrackerOutput degraded = tracker.markMissed(10.2);
+    EXPECT_EQ(degraded.status, TargetStatus::DEGRADED);
+    EXPECT_GT(degraded.cx, 0.1);
+
+    const TrackerOutput lost = tracker.markMissed(10.3);
+    EXPECT_EQ(lost.status, TargetStatus::LOST);
+    EXPECT_DOUBLE_EQ(lost.vx, 0.0);
+    EXPECT_DOUBLE_EQ(lost.vy, 0.0);
+    const double lost_x = lost.cx;
+
+    const TrackerOutput still_lost = tracker.markMissed(10.4);
+    EXPECT_EQ(still_lost.status, TargetStatus::LOST);
+    EXPECT_DOUBLE_EQ(still_lost.cx, lost_x);
+}
+
 TEST(EquipmentGeometryTest, EstimatesRollPitchFromGroundPlane) {
     pcl::PointCloud<pcl::PointXYZI> cloud;
     const double roll = 5.0 * M_PI / 180.0;

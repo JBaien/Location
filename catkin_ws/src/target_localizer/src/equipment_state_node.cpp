@@ -25,6 +25,8 @@ struct NodeConfig {
     double max_pointcloud_age_sec = 0.5;
     double distance_filter_alpha = 0.3;
     double max_distance_jump_m = 0.3;
+    double attitude_filter_alpha = 0.1;
+    double max_attitude_jump_deg = 3.0;
     EquipmentGeometryConfig geometry;
 };
 
@@ -65,6 +67,12 @@ private:
         private_nh_.param("max_distance_jump_m",
                           config_.max_distance_jump_m,
                           config_.max_distance_jump_m);
+        private_nh_.param("attitude_filter_alpha",
+                          config_.attitude_filter_alpha,
+                          config_.attitude_filter_alpha);
+        private_nh_.param("max_attitude_jump_deg",
+                          config_.max_attitude_jump_deg,
+                          config_.max_attitude_jump_deg);
         private_nh_.param("ground_x_min", config_.geometry.ground_x_min,
                           config_.geometry.ground_x_min);
         private_nh_.param("ground_x_max", config_.geometry.ground_x_max,
@@ -144,6 +152,8 @@ private:
             0.0, std::min(1.0, config_.geometry.distance_percentile));
         config_.distance_filter_alpha = std::max(
             0.0, std::min(1.0, config_.distance_filter_alpha));
+        config_.attitude_filter_alpha = std::max(
+            0.0, std::min(1.0, config_.attitude_filter_alpha));
     }
 
     void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg) {
@@ -171,6 +181,7 @@ private:
         EquipmentGeometryResult result =
             estimateEquipmentGeometry(cloud, config_.geometry);
         applyInputQuality(working_msg, cloud.size(), input_failure, result);
+        applyAttitudeFilter(result);
         applyDistanceFilter(result);
 
         EquipmentState out;
@@ -316,6 +327,62 @@ private:
         }
     }
 
+    void applyAttitudeFilter(EquipmentGeometryResult& result) {
+        const bool roll_jump = filterAngle(result.roll_valid, result.roll_deg,
+                                           last_roll_deg_, false);
+        const bool pitch_jump = filterAngle(result.pitch_valid, result.pitch_deg,
+                                            last_pitch_deg_, false);
+        const bool yaw_jump = filterAngle(result.yaw_valid, result.yaw_deg,
+                                          last_yaw_deg_, true);
+        result.attitude_valid =
+            result.roll_valid || result.pitch_valid || result.yaw_valid;
+        if ((roll_jump || pitch_jump || yaw_jump) &&
+            (result.invalid_reason == "none" ||
+             result.invalid_reason == "PARTIAL_VALID")) {
+            result.overall_status = result.attitude_valid ? "DEGRADED" : "INVALID";
+            result.quality = result.overall_status;
+            result.invalid_reason = "ATTITUDE_JUMP_REJECTED";
+        }
+    }
+
+    bool filterAngle(bool& valid, double& value_deg, double& last_deg,
+                     bool wrap_degrees) const {
+        if (!valid || !std::isfinite(value_deg)) {
+            return false;
+        }
+        if (!std::isfinite(last_deg)) {
+            last_deg = value_deg;
+            return false;
+        }
+
+        double delta = value_deg - last_deg;
+        if (wrap_degrees) {
+            while (delta > 180.0) {
+                delta -= 360.0;
+            }
+            while (delta < -180.0) {
+                delta += 360.0;
+            }
+        }
+        if (config_.max_attitude_jump_deg > 0.0 &&
+            std::abs(delta) > config_.max_attitude_jump_deg) {
+            value_deg = last_deg;
+            return true;
+        }
+
+        value_deg = last_deg + config_.attitude_filter_alpha * delta;
+        if (wrap_degrees) {
+            while (value_deg > 180.0) {
+                value_deg -= 360.0;
+            }
+            while (value_deg < -180.0) {
+                value_deg += 360.0;
+            }
+        }
+        last_deg = value_deg;
+        return false;
+    }
+
     bool filterDistance(bool& valid, double& value_mm, double& last_mm) const {
         if (!valid) {
             return false;
@@ -354,6 +421,9 @@ private:
     double last_left_rear_mm_ = std::numeric_limits<double>::quiet_NaN();
     double last_right_front_mm_ = std::numeric_limits<double>::quiet_NaN();
     double last_right_rear_mm_ = std::numeric_limits<double>::quiet_NaN();
+    double last_roll_deg_ = std::numeric_limits<double>::quiet_NaN();
+    double last_pitch_deg_ = std::numeric_limits<double>::quiet_NaN();
+    double last_yaw_deg_ = std::numeric_limits<double>::quiet_NaN();
 };
 
 }  // namespace

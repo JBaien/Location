@@ -1,11 +1,14 @@
 #include <cmath>
+#include <algorithm>
 #include <limits>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include <diagnostic_msgs/DiagnosticArray.h>
 #include <diagnostic_msgs/DiagnosticStatus.h>
 #include <diagnostic_msgs/KeyValue.h>
+#include <Eigen/Dense>
 #include <pcl/common/common.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/filters/statistical_outlier_removal.h>
@@ -77,7 +80,7 @@ struct NodeConfig {
 };
 
 // target_localizer_node 是圆柱标靶定位链路的 ROS 封装：
-//   /points_raw -> ROI 裁剪 -> 降采样/去离群 -> 圆柱 RANSAC -> 参考高度取中心
+//   /points_raw -> ROI 裁剪 -> 降采样/去离群 -> XY 平面圆 RANSAC -> 圆心
 //               -> 常速度跟踪 -> /target_measurement + /target_xy + Marker/diagnostics
 //
 // 注意：本节点默认订阅的是三雷达融合后的 /points_raw，不再重复处理三路原始点云。
@@ -113,8 +116,17 @@ private:
         TrackerConfig config;
         private_nh.param("min_good_inliers", config.min_good_inliers,
                          config.min_good_inliers);
+        private_nh.param("min_update_inliers", config.min_update_inliers,
+                         config.min_update_inliers);
         private_nh.param("good_residual_rms", config.good_residual_rms,
                          config.good_residual_rms);
+        private_nh.param("max_update_residual_rms",
+                         config.max_update_residual_rms,
+                         config.max_update_residual_rms);
+        private_nh.param("max_update_jump_m", config.max_update_jump_m,
+                         config.max_update_jump_m);
+        private_nh.param("max_velocity_mps", config.max_velocity_mps,
+                         config.max_velocity_mps);
         private_nh.param("lost_after_misses", config.lost_after_misses,
                          config.lost_after_misses);
         private_nh.param("hold_duration", config.hold_duration,
@@ -203,10 +215,9 @@ private:
             return;
         }
 
-        // PCL 拟合得到的是完整三维圆柱轴线。业务只需要固定参考高度处的轴线中心，
-        // 因此在 z=reference_z 平面取交点，避免圆柱局部倾斜影响 XY 输出定义。
-        const Eigen::Vector3d center =
-            centerAtReferenceHeight(model, config_.reference_z);
+        // 业务只关心 XY 位移。拟合阶段已经把强反光点投影到 XY 平面做圆拟合，
+        // 这里直接使用圆心，Z 固定为 reference_z 仅用于消息和 RViz marker 表达。
+        const Eigen::Vector3d center = model.axis_point;
         Measurement measurement;
         measurement.stamp = msg->header.stamp.toSec();
         measurement.cx = center.x();
@@ -277,61 +288,71 @@ private:
 
     bool fitCylinder(const CloudT& cloud, CylinderModel& model,
                      std::string& reason) const {
-        CloudT::ConstPtr cloud_ptr(new CloudT(cloud));
-        pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
-        // SACMODEL_CYLINDER 需要点法向辅助约束。normal_k 越大越平滑，但遮挡/稀疏时
-        // 会跨结构估法向；默认 20 适合三雷达融合后几十到上百个目标点的规模。
-        pcl::NormalEstimation<PointT, pcl::Normal> normal_estimator;
-        normal_estimator.setInputCloud(cloud_ptr);
-        normal_estimator.setSearchMethod(
-            typename pcl::search::KdTree<PointT>::Ptr(
-                new pcl::search::KdTree<PointT>));
-        normal_estimator.setKSearch(config_.normal_k);
-        normal_estimator.compute(*normals);
-
-        // RANSAC 粗拟合负责在外点中找出圆柱内点。
-        // 半径范围来自标靶尺寸：默认 Ø250 mm，即半径 0.125 m，允许 ±0.03 m。
-        pcl::SACSegmentationFromNormals<PointT, pcl::Normal> segmenter;
-        segmenter.setOptimizeCoefficients(true);
-        segmenter.setModelType(pcl::SACMODEL_CYLINDER);
-        segmenter.setMethodType(pcl::SAC_RANSAC);
-        segmenter.setNormalDistanceWeight(config_.normal_distance_weight);
-        segmenter.setMaxIterations(config_.max_iterations);
-        segmenter.setDistanceThreshold(config_.cylinder_distance_threshold);
-        segmenter.setRadiusLimits(config_.radius_min, config_.radius_max);
-        segmenter.setInputCloud(cloud_ptr);
-        segmenter.setInputNormals(normals);
-
-        pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
-        pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
-        segmenter.segment(*inliers, *coefficients);
-        if (inliers->indices.empty() || coefficients->values.size() < 7) {
-            reason = "cylinder_ransac_failed";
+        if (cloud.size() < 3U) {
+            reason = "not_enough_circle_points";
             return false;
         }
 
-        model.axis_point = Eigen::Vector3d(coefficients->values[0],
-                                           coefficients->values[1],
-                                           coefficients->values[2]);
-        model.axis_dir = Eigen::Vector3d(coefficients->values[3],
-                                         coefficients->values[4],
-                                         coefficients->values[5])
-                             .normalized();
-        model.radius = coefficients->values[6];
-        model.inlier_count = static_cast<int>(inliers->indices.size());
+        const double target_radius =
+            0.5 * (config_.radius_min + config_.radius_max);
+        std::vector<double> center_x_candidates;
+        std::vector<double> center_y_candidates;
+        center_x_candidates.reserve(cloud.size());
+        center_y_candidates.reserve(cloud.size());
+        for (const PointT& point : cloud.points) {
+            const double range_xy = std::hypot(point.x, point.y);
+            if (range_xy <= 1e-6) {
+                continue;
+            }
+            // 单雷达通常只能看到圆柱朝向雷达的一小段反光面，直接圆拟合会在
+            // 多个合法圆之间跳变。把每个表面点沿雷达到该点的 XY 视线方向
+            // 外推一个目标半径，可得到稳定的圆心候选。
+            center_x_candidates.push_back(
+                point.x + target_radius * point.x / range_xy);
+            center_y_candidates.push_back(
+                point.y + target_radius * point.y / range_xy);
+        }
+        if (center_x_candidates.size() < 3U) {
+            reason = "not_enough_center_candidates";
+            return false;
+        }
 
-        // 用内点到圆柱侧壁的径向残差计算 RMS。该值会发布到 diagnostics，
-        // 也用于判断当前检测是 GOOD 还是 DEGRADED。
+        auto median = [](std::vector<double>& values) {
+            const auto middle = values.begin() + values.size() / 2;
+            std::nth_element(values.begin(), middle, values.end());
+            return *middle;
+        };
+        const double cx = median(center_x_candidates);
+        const double cy = median(center_y_candidates);
+        if (!std::isfinite(cx) || !std::isfinite(cy)) {
+            reason = "invalid_center_estimate";
+            return false;
+        }
+
+        std::vector<int> inliers;
+        inliers.reserve(cloud.size());
         double sum_sq = 0.0;
-        for (int index : inliers->indices) {
+        for (int index = 0; index < static_cast<int>(cloud.size()); ++index) {
             const PointT& point = cloud.points[index];
             const double residual =
-                radialResidual(Eigen::Vector3d(point.x, point.y, point.z),
-                               model);
-            sum_sq += residual * residual;
+                std::abs(std::hypot(point.x - cx, point.y - cy) -
+                         target_radius);
+            if (residual <= config_.cylinder_distance_threshold) {
+                inliers.push_back(index);
+                sum_sq += residual * residual;
+            }
         }
-        model.residual_rms =
-            std::sqrt(sum_sq / std::max(1, model.inlier_count));
+        if (inliers.size() < 3U) {
+            reason = "not_enough_front_surface_inliers";
+            return false;
+        }
+
+        model.axis_point = Eigen::Vector3d(cx, cy, config_.reference_z);
+        model.axis_dir = Eigen::Vector3d::UnitZ();
+        model.radius = target_radius;
+        model.inlier_count = static_cast<int>(inliers.size());
+        model.residual_rms = std::sqrt(
+            sum_sq / std::max(1, model.inlier_count));
         return true;
     }
 
@@ -421,8 +442,7 @@ private:
         marker.action = visualization_msgs::Marker::ADD;
         // RViz Marker 用半透明圆柱显示检测结果，便于现场确认 ROI、半径和中心位置。
         // 第一阶段只显示竖直圆柱；轴线倾斜的精确姿态可后续再扩展。
-        const Eigen::Vector3d center =
-            centerAtReferenceHeight(model, config_.reference_z);
+        const Eigen::Vector3d center = model.axis_point;
         marker.pose.position.x = center.x();
         marker.pose.position.y = center.y();
         marker.pose.position.z = config_.reference_z;
