@@ -33,6 +33,7 @@ export class SceneView {
   private renderer = new THREE.WebGLRenderer({ antialias: true });
   private controls: OrbitControls;
   private grid: THREE.GridHelper;
+  private axisGuide = new THREE.Group();
   private resizeObserver: ResizeObserver;
   private animationFrame = 0;
   private colorMode: ColorMode = 'height';
@@ -82,6 +83,8 @@ export class SceneView {
     this.grid = new THREE.GridHelper(120, 60, 0x6f777d, 0x454b50);
     this.grid.rotation.x = Math.PI / 2;
     this.scene.add(this.grid);
+    this.axisGuide = this.createAxisGuide();
+    this.scene.add(this.axisGuide);
     this.scene.add(this.currentLayer.points);
     this.scene.add(this.stableLayer.points);
     this.scene.add(this.pathLayer.line);
@@ -198,6 +201,97 @@ export class SceneView {
   private recolor(): void {
     this.currentLayer.recolor(this.colorMode, this.layerState.reflector);
     this.stableLayer.recolor(this.colorMode, this.layerState.reflector);
+  }
+
+  private createAxisGuide(): THREE.Group {
+    const group = new THREE.Group();
+    group.name = 'xy_axis_guide';
+
+    const origin = new THREE.Vector3(0, 0, 0.03);
+    const xColor = 0xff5c5c;
+    const yColor = 0x42d67b;
+    const arrowLength = 0.72;
+    const shaftRadius = 0.018;
+    const headLength = 0.16;
+    const headRadius = 0.06;
+
+    group.add(this.createThickArrow(new THREE.Vector3(1, 0, 0), origin, arrowLength, xColor, shaftRadius, headLength, headRadius));
+    group.add(this.createThickArrow(new THREE.Vector3(0, 1, 0), origin, arrowLength, yColor, shaftRadius, headLength, headRadius));
+
+    const xLabel = this.createAxisLabel('+X', '#ff8b8b');
+    xLabel.position.set(arrowLength + 0.2, 0, 0.08);
+    group.add(xLabel);
+
+    const yLabel = this.createAxisLabel('+Y', '#70e99d');
+    yLabel.position.set(0, arrowLength + 0.2, 0.08);
+    group.add(yLabel);
+
+    return group;
+  }
+
+  private createAxisLabel(text: string, color: string): THREE.Sprite {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 96;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = '800 58px "Segoe UI", "Noto Sans SC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 7;
+      ctx.strokeStyle = 'rgba(5, 12, 18, 0.92)';
+      ctx.strokeText(text, canvas.width / 2, canvas.height / 2);
+      ctx.fillStyle = color;
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(0.64, 0.28, 1);
+    sprite.renderOrder = 10;
+    return sprite;
+  }
+
+  private createThickArrow(
+    direction: THREE.Vector3,
+    origin: THREE.Vector3,
+    length: number,
+    color: number,
+    shaftRadius: number,
+    headLength: number,
+    headRadius: number
+  ): THREE.Group {
+    const group = new THREE.Group();
+    const dir = direction.clone().normalize();
+    const shaftLength = Math.max(0.01, length - headLength);
+    const material = new THREE.MeshBasicMaterial({ color });
+
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLength, 16),
+      material
+    );
+    shaft.position.copy(origin.clone().addScaledVector(dir, shaftLength / 2));
+
+    const head = new THREE.Mesh(
+      new THREE.ConeGeometry(headRadius, headLength, 24),
+      material
+    );
+    head.position.copy(origin.clone().addScaledVector(dir, shaftLength + headLength / 2));
+
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    shaft.quaternion.copy(quat);
+    head.quaternion.copy(quat);
+    group.add(shaft);
+    group.add(head);
+    return group;
   }
 
   private resize(): void {

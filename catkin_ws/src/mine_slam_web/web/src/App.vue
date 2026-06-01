@@ -324,6 +324,10 @@ onBeforeUnmount(() => {
       <section class="scene-panel">
         <div class="pointcloud-panel">
           <div ref="sceneEl" class="scene-host"></div>
+          <div class="axis-legend" aria-label="XY 坐标方向">
+            <span class="axis-legend-row axis-x"><i></i><b>+X</b><em>前向</em></span>
+            <span class="axis-legend-row axis-y"><i></i><b>+Y</b><em>左向</em></span>
+          </div>
           <div v-if="(status?.current_cloud_points ?? 0) === 0" class="cloud-empty-state">
             <strong>等待点云数据…</strong>
             <span>请检查雷达连接或 WebSocket 状态</span>

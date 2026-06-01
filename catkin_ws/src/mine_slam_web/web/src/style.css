@@ -206,6 +206,65 @@ input {
   height: 100%;
 }
 
+.axis-legend {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  display: grid;
+  gap: 6px;
+  min-width: 108px;
+  padding: 9px 10px;
+  border: 1px solid rgba(86, 174, 210, 0.24);
+  border-radius: 6px;
+  background: rgba(5, 16, 25, 0.78);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+}
+
+.axis-legend-row {
+  display: grid;
+  grid-template-columns: 18px 30px 1fr;
+  align-items: center;
+  gap: 6px;
+  color: #e7f7ff;
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.axis-legend-row i {
+  display: block;
+  width: 18px;
+  height: 3px;
+  border-radius: 999px;
+}
+
+.axis-legend-row b {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.axis-legend-row em {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.axis-x i {
+  background: #ff5c5c;
+}
+
+.axis-x b {
+  color: #ff8b8b;
+}
+
+.axis-y i {
+  background: #42d67b;
+}
+
+.axis-y b {
+  color: #70e99d;
+}
+
 .cloud-empty-state {
   position: absolute;
   left: 12px;
