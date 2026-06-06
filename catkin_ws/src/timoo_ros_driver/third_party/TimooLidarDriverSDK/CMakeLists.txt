@@ -52,10 +52,10 @@ add_subdirectory(./app)
 add_subdirectory(./func)
 
 set(SUB_LIBS
-  timoo_input
-  timoo_data_parser
-  timoo_driver
-  timoo_func
+  timoo_sdk_input
+  timoo_sdk_data_parser
+  timoo_sdk_driver
+  timoo_sdk_func
 )
 
 # 创建一个SDK接口库，用于整合所有子模块

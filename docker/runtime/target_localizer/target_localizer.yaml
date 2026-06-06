@@ -1,5 +1,5 @@
-input_topic: /lidar1/lidar_points
-target_frame: lidar1
+input_topic: /points_raw
+target_frame: base_link
 
 measurement_topic: /target_measurement
 xy_topic: /target_xy
@@ -37,7 +37,7 @@ hold_duration: 0.0
 min_update_inliers: 15
 
 equipment_state_topic: /equipment_state
-required_frame_id: lidar1
+required_frame_id: base_link
 enable_tf_transform: false
 max_pointcloud_age_sec: 0.5
 distance_filter_alpha: 0.3
@@ -85,12 +85,12 @@ modbus:
   unit_id: 1
   timeout_ms: 500
   ins:
-    enabled: true
+    enabled: false
     roll: {address: 113, scale: 0.1}
     pitch: {address: 114, scale: 0.1}
     yaw: {address: 112, scale: 0.1}
   mmwave:
-    enabled: true
+    enabled: false
     left_front: {address: 101, scale: 1.0}
     left_rear: {address: 102, scale: 1.0}
     right_front: {address: 103, scale: 1.0}

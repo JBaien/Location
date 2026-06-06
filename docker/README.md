@@ -261,39 +261,57 @@ docker/runtime/bags:/data/bags
 
 现场主要修改这些文件：
 
+- `docker/runtime/runtime/driver.yaml`
 - `docker/runtime/launch/driver_tm16_multi3.launch`
 - `docker/runtime/launch/driver_tmlidar_multi3.launch`
-- `docker/runtime/launch/bringup.launch`
+- `docker/runtime/launch/driver_timoo_sdk_multi3.launch`
+- `docker/runtime/launch/lidar_static_tf.launch`
 - `docker/runtime/lidar_fusion/multi_lidar_fusion_timoo.yaml`
 - `docker/runtime/lidar_fusion/multi_lidar_fusion_tmlidar.yaml`
+- `docker/runtime/lidar_fusion/multi_lidar_fusion_timoo_sdk.yaml`
 - `docker/runtime/target_localizer/target_localizer.yaml`
 - `docker/runtime/web/web_viewer.yaml`
 
-外参建议先写在 `bringup.launch` 中的：
+默认驱动只需要改 `runtime/driver.yaml`：
 
-```xml
-<arg name="base_to_lidar1_xyz_ypr" value="0 0 0 0 0 0"/>
-<arg name="lidar1_to_lidar2_xyz_ypr" value="0 0 0 0 0 0"/>
-<arg name="lidar1_to_lidar3_xyz_ypr" value="0 0 0 0 0 0"/>
+```yaml
+driver_family: timoo_sdk
 ```
 
-这里的顺序是：
+可选值：
+
+```text
+tm16       # 旧 timoo_driver + timoo_pointcloud，输出 /lidarN/timoo_points
+tmlidar    # 旧 lidar_driver + lidar_pointcloud，输出 /lidarN/lidar_points
+timoo_sdk  # 新 timoo_ros_driver SDK，输出 /lidarN/timoo_points
+```
+
+临时覆盖时可以在命令行传 `driver_family:=...`，优先级高于 `driver.yaml`。不需要同时修改 `bringup.launch`。
+
+外参写在 `lidar_static_tf.launch` 中。参数顺序是：
 
 ```text
 x y z yaw pitch roll parent_frame child_frame
 ```
 
-修改雷达端口、frame 和过滤配置：
+修改 TM16 旧驱动端口、frame 和过滤配置：
 
 ```bash
 vim /opt/mine-lidar/docker/runtime/launch/driver_tm16_multi3.launch
 docker compose -f /opt/mine-lidar/docker/docker-compose.arm64.yml restart
 ```
 
-如需改用 tmlidar 驱动，把 `docker/runtime/launch/bringup.launch` 中的 `driver_family` 设为 `tmlidar`，并修改：
+修改 tmlidar 旧驱动配置：
 
 ```bash
 vim /opt/mine-lidar/docker/runtime/launch/driver_tmlidar_multi3.launch
+docker compose -f /opt/mine-lidar/docker/docker-compose.arm64.yml restart
+```
+
+修改 Timoo SDK 新驱动配置：
+
+```bash
+vim /opt/mine-lidar/docker/runtime/launch/driver_timoo_sdk_multi3.launch
 docker compose -f /opt/mine-lidar/docker/docker-compose.arm64.yml restart
 ```
 
@@ -329,6 +347,8 @@ min_points_per_lidar: 10
 ```
 
 tmlidar 驱动对应的融合配置是 `multi_lidar_fusion_tmlidar.yaml`，输入话题为 `/lidar1/lidar_points`、`/lidar2/lidar_points`、`/lidar3/lidar_points`。
+
+Timoo SDK 驱动对应的融合配置是 `multi_lidar_fusion_timoo_sdk.yaml`，输入话题为 `/lidar1/timoo_points`、`/lidar2/timoo_points`、`/lidar3/timoo_points`。
 
 修改圆柱标靶定位参数：
 
@@ -489,7 +509,7 @@ rostopic list
 /tf_static
 ```
 
-如果启用了默认 Timoo 雷达驱动，还应看到：
+如果 `driver_family` 是 `tm16` 或 `timoo_sdk`，还应看到：
 
 ```text
 /lidar1/timoo_points
@@ -497,7 +517,7 @@ rostopic list
 /lidar3/timoo_points
 ```
 
-如果在 `bringup.launch` 中设置 `driver_family:=tmlidar`，对应原始点云话题为：
+如果 `driver_family` 是 `tmlidar`，对应原始点云话题为：
 
 ```text
 /lidar1/lidar_points
@@ -527,7 +547,7 @@ docker logs -f --tail 200 mine-lidar-runtime-arm64
 callbacks=0, published=0
 ```
 
-通常表示没有收到三路原始点云，优先检查雷达供电、网线、主机 IP、UDP 端口、host 网络，以及当前 `driver_family` 对应的 `driver_tm16_multi3.launch` 或 `driver_tmlidar_multi3.launch`。
+通常表示没有收到三路原始点云，优先检查雷达供电、网线、主机 IP、UDP 端口、host 网络，以及当前 `driver_family` 对应的 `driver_tm16_multi3.launch`、`driver_tmlidar_multi3.launch` 或 `driver_timoo_sdk_multi3.launch`。
 
 ## 录制点云
 
@@ -546,13 +566,14 @@ docker compose -f docker/docker-compose.arm64.yml run --rm mine-lidar \
   bringup enable_record:=true
 ```
 
-或直接修改 `/opt/mine-lidar/docker/runtime/launch/bringup.launch`：
+或直接在启动命令中覆盖：
 
-```xml
-<arg name="enable_record" default="true"/>
+```bash
+docker compose -f docker/docker-compose.arm64.yml run --rm mine-lidar \
+  bringup enable_record:=true
 ```
 
-再重启服务。
+如需长期默认录制，再修改 `/opt/mine-lidar/docker/runtime/launch/bringup.launch` 中的 `enable_record` 默认值。
 
 bag 会写到：
 
@@ -560,7 +581,7 @@ bag 会写到：
 docker/runtime/bags
 ```
 
-默认 Timoo 驱动录制：
+`tm16` 和 `timoo_sdk` 驱动录制：
 
 - `/lidar1/timoo_points`
 - `/lidar2/timoo_points`
@@ -575,7 +596,7 @@ docker/runtime/bags
 - `/tf_static`
 - `/rosout`
 
-tmlidar 驱动录制时，三路原始点云改为 `/lidar1/lidar_points`、`/lidar2/lidar_points`、`/lidar3/lidar_points`。
+`tmlidar` 驱动录制时，三路原始点云改为 `/lidar1/lidar_points`、`/lidar2/lidar_points`、`/lidar3/lidar_points`。
 
 用于多雷达标定时，必须保留三个原始雷达点云和 `/tf_static`，不要只录融合后的 `/points_raw`。
 

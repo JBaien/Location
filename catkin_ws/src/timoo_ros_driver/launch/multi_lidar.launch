@@ -1,0 +1,69 @@
+<launch>
+    <param name="use_sim_time" value="false" />
+
+    <!-- 雷达1 - 独立点云话题: /lidar1/timoo_points -->
+    <group ns="lidar1">
+        <param name="cut_angle" value="-0.1" type="double" />
+        <param name="min_distance" value="0.2" type="double" />
+        <param name="max_distance" value="150" type="double" />
+        <param name="udp_port" value="2368" type="int" />
+        <param name="status_port" value="8603" type="int" />
+        <param name="imu_port" value="65535" type="int" />
+        <param name="fixed_points_count" value="true" type="bool" />
+        <param name="remove_invalid_points" value="false" type="bool" />
+        <param name="lidar_type" value="TIMOO16" type="str" />
+        <param name="host_ip" value="192.168.1.106" type="str" />
+        <param name="frame_id" value="lidar1" type="str" />
+        <param name="use_gps_clock" value="false" type="bool" />
+        <param name="use_tail_time" value="true" type="bool" />
+        <param name="use_sensor_timestamp" value="false" type="bool" />
+
+        <node name="timoo_ros_driver_node" pkg="timoo_ros_driver" type="timoo_ros_driver_node" output="screen">
+        </node>
+    </group>
+
+    <!-- 雷达2 - 独立点云话题: /lidar2/timoo_points -->
+    <group ns="lidar2">
+        <param name="cut_angle" value="-0.1" type="double" />
+        <param name="min_distance" value="0.2" type="double" />
+        <param name="max_distance" value="150" type="double" />
+        <param name="udp_port" value="2369" type="int" />
+        <param name="status_port" value="8604" type="int" />
+        <param name="imu_port" value="7789" type="int" />
+        <param name="fixed_points_count" value="true" type="bool" />
+        <param name="remove_invalid_points" value="false" type="bool" />
+        <param name="lidar_type" value="TIMOO16" type="str" />
+        <param name="host_ip" value="192.168.1.106" type="str" />
+        <param name="frame_id" value="lidar2" type="str" />
+        <param name="use_gps_clock" value="false" type="bool" />
+        <param name="use_tail_time" value="true" type="bool" />
+        <param name="use_sensor_timestamp" value="false" type="bool" />
+
+        <node name="timoo_ros_driver_node" pkg="timoo_ros_driver" type="timoo_ros_driver_node" output="screen"
+              launch-prefix="bash -c 'sleep 2; $0 $@'">
+        </node>
+    </group>
+
+    <!-- 雷达3 - 独立点云话题: /lidar3/timoo_points -->
+    <group ns="lidar3">
+        <param name="cut_angle" value="-0.1" type="double" />
+        <param name="min_distance" value="0.2" type="double" />
+        <param name="max_distance" value="150" type="double" />
+        <param name="udp_port" value="2370" type="int" />
+        <param name="status_port" value="8605" type="int" />
+        <param name="imu_port" value="7790" type="int" />
+        <param name="fixed_points_count" value="true" type="bool" />
+        <param name="remove_invalid_points" value="false" type="bool" />
+        <param name="lidar_type" value="TIMOO16" type="str" />
+        <param name="host_ip" value="192.168.1.106" type="str" />
+        <param name="frame_id" value="lidar3" type="str" />
+        <param name="use_gps_clock" value="false" type="bool" />
+        <param name="use_tail_time" value="true" type="bool" />
+        <param name="use_sensor_timestamp" value="false" type="bool" />
+
+        <node name="timoo_ros_driver_node" pkg="timoo_ros_driver" type="timoo_ros_driver_node" output="screen"
+              launch-prefix="bash -c 'sleep 4; $0 $@'">
+        </node>
+    </group>
+
+</launch>

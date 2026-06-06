@@ -46,11 +46,8 @@ endif()
 ## 查找catkin宏和库
 find_package(catkin REQUIRED COMPONENTS
   roscpp
-  std_msgs
   sensor_msgs
-  rosbag
-  pcl_ros
-  cv_bridge
+  pcl_conversions
 )
 
 ## 查找第三方库
@@ -59,14 +56,6 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(PCL REQUIRED)
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
-
-# 查找YAML库
-find_package(yaml-cpp REQUIRED)
-message(STATUS "Found YAML-CPP version: ${yaml-cpp_VERSION}")
-
-# 查找OpenCV库
-find_package(OpenCV REQUIRED)
-message(STATUS "Found OpenCV version: ${OpenCV_VERSION}")
 
 ###########
 ## 编译SDK ##
@@ -81,17 +70,13 @@ add_subdirectory(third_party/TimooLidarDriverSDK)
 ###########
 
 catkin_package(
-  CATKIN_DEPENDS std_msgs sensor_msgs
-  # INCLUDE_DIRS include
-  LIBRARIES ${PROJECT_NAME}
+  CATKIN_DEPENDS roscpp sensor_msgs pcl_conversions
 )
 
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
-  ${YAML_CPP_INCLUDE_DIR}
-  ${OpenCV_INCLUDE_DIRS}
   # 添加SDK的头文件目录
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/TimooLidarDriverSDK
 )
@@ -112,8 +97,6 @@ add_dependencies(${PROJECT_NAME}_node
 target_link_libraries(${PROJECT_NAME}_node
   ${catkin_LIBRARIES}
   ${PCL_LIBRARIES}
-  ${YAML_CPP_LIBRARIES}
-  ${OpenCV_LIBRARIES}
   TimooLidarDriverSDK  # 链接SDK库
 )
 
@@ -158,17 +141,7 @@ install(TARGETS ${PROJECT_NAME}_node
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
-# 安装头文件
-install(DIRECTORY include/${PROJECT_NAME}/
-  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
-)
-
 # 安装启动文件（如果有的话）
 install(DIRECTORY launch/
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
-)
-
-# 安装配置文件（如果有的话）
-install(DIRECTORY config/
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/config
 )

@@ -11,11 +11,11 @@ find_library(PCAP_LIBRARY pcap)
 find_path(PCAP_INCLUDE_DIR pcap.h)
 include_directories(${PCAP_INCLUDE_DIR})
 
-add_library(timoo_input SHARED
+add_library(timoo_sdk_input SHARED
   ${DIR_SRCS}
 ) 
 
-target_link_libraries(timoo_input 
+target_link_libraries(timoo_sdk_input
   ${PCAP_LIBRARY}
 )
 
@@ -24,7 +24,7 @@ target_link_libraries(timoo_input
 ##################################################################################################
 ## install
 ##################################################################################################
-install(TARGETS timoo_input
+install(TARGETS timoo_sdk_input
   EXPORT ${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib

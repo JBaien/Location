@@ -3,11 +3,12 @@
   <!--
     Three tmlidar driver instances.
     These publish /lidarN/lidar_points; pair with multi_lidar_fusion_tmlidar.yaml.
+    Empty device_ip disables source-IP filtering for reusable deployments.
   -->
 
   <group ns="lidar1">
     <include file="$(find lidar_pointcloud)/launch/scan.launch">
-      <arg name="device_ip" value="192.168.188.115" />
+      <arg name="device_ip" value="" />
       <arg name="frame_id" value="lidar1" />
       <arg name="max_range" value="150.0" />
       <arg name="min_range" value="0.4" />
@@ -20,12 +21,12 @@
 
   <group ns="lidar2">
     <include file="$(find lidar_pointcloud)/launch/scan.launch">
-      <arg name="device_ip" value="192.168.188.115" />
+      <arg name="device_ip" value="" />
       <arg name="frame_id" value="lidar2" />
       <arg name="max_range" value="150.0" />
       <arg name="min_range" value="0.4" />
       <arg name="pcap" value="" />
-      <arg name="port" value="2555" />
+      <arg name="port" value="2556" />
       <arg name="timestamp_first_packet" value="true" />
       <arg name="organize_cloud" value="false" />
     </include>
@@ -33,12 +34,12 @@
 
   <group ns="lidar3">
     <include file="$(find lidar_pointcloud)/launch/scan.launch">
-      <arg name="device_ip" value="192.168.188.115" />
+      <arg name="device_ip" value="" />
       <arg name="frame_id" value="lidar3" />
       <arg name="max_range" value="150.0" />
       <arg name="min_range" value="0.4" />
       <arg name="pcap" value="" />
-      <arg name="port" value="2555" />
+      <arg name="port" value="2557" />
       <arg name="timestamp_first_packet" value="true" />
       <arg name="organize_cloud" value="false" />
     </include>

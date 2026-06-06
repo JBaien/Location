@@ -12,8 +12,10 @@
     <param name="remove_invalid_points" value="false" type="bool" />
     <param name="lidar_type" value="TIMOO16" type="str" />  <!-- 目前支持雷达类型: TIMOO16, TIMOO32, TIMOO1550, TIMOO1550STD, TIMOO128, TIMOO128V -->
     <param name="host_ip" value="" type="str" />  <!-- 枚举值作为字符串 -->
+    <param name="frame_id" value="timoo" type="str" />
     <param name="use_gps_clock" value="false" type="bool" />
     <param name="use_tail_time" value="true" type="bool" />
+    <param name="use_sensor_timestamp" value="false" type="bool" />
 
     <!-- <rosparam command="load" file="$(find lidar_driver)/launch/params.yaml" /> -->
 	<node name="timoo_ros_driver_node" pkg="timoo_ros_driver" type="timoo_ros_driver_node" output="screen">

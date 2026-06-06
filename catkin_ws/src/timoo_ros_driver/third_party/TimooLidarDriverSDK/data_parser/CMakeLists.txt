@@ -9,11 +9,11 @@ aux_source_directory(./tm128v DIR_SRCS)
 
 # add_definitions(-DHAVE_NEW_YAMLCPP)
 
-add_library(timoo_data_parser SHARED
+add_library(timoo_sdk_data_parser SHARED
   ${DIR_SRCS}
 ) 
 
-# target_link_libraries(timoo_data_parser
+# target_link_libraries(timoo_sdk_data_parser
 #   yaml-cpp
 # )
 
@@ -22,7 +22,7 @@ add_library(timoo_data_parser SHARED
 ##################################################################################################
 ## install
 ##################################################################################################
-install(TARGETS timoo_data_parser
+install(TARGETS timoo_sdk_data_parser
   EXPORT ${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib

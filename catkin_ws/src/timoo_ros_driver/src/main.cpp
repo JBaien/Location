@@ -1,5 +1,7 @@
 
 // #include "pcl/impl/point_types.hpp"
+#include <cmath>
+#include <cstdint>
 #include <memory>
 #include <ros/ros.h>
 
@@ -21,11 +23,20 @@
 using namespace timoo::driver;
 bool remove_invalid_points;
 
+ros::Time ResolveCloudStamp(const base::TimooPointCloudPtr& points_data,
+                            bool use_sensor_timestamp) {
+    if (use_sensor_timestamp && points_data &&
+        std::isfinite(points_data->timestamp) && points_data->timestamp > 0.0) {
+        return ros::Time(points_data->timestamp);
+    }
+    return ros::Time::now();
+}
+
 
 struct TimooPointXYZIRT {
  PCL_ADD_POINT4D;
  float intensity;
- uint16_t ring = 0;
+ std::uint16_t ring = 0;
  float time = 0;
  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
  } EIGEN_ALIGN16;
@@ -37,13 +48,16 @@ struct TimooPointXYZIRT {
  (float, y, y)
  (float, z, z)
  (float, intensity, intensity)
- (uint16_t, ring, ring)
+ (std::uint16_t, ring, ring)
  (float, time, time)
  )
  typedef pcl::PointCloud<TimooPointXYZIRT> TimooPointCloudXYZIRT;
 
 void AddPointCloud(const base::TimooPointCloudPtr& points_data,
-                   pcl::PointCloud<TimooPointXYZIRT>& cloud,ros::Publisher points_pub_) {
+                   pcl::PointCloud<TimooPointXYZIRT>& cloud,
+                   const ros::Publisher& points_pub_,
+                   const std::string& frame_id,
+                   bool use_sensor_timestamp) {
   for (const auto& p : points_data->points) {
     if ((!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) && remove_invalid_points) {
       continue;
@@ -55,22 +69,24 @@ void AddPointCloud(const base::TimooPointCloudPtr& points_data,
     point.z = p.z;
     point.intensity = p.intensity;
     point.ring = p.ring_id;
-    point.time = p.time; // Assuming time is not used in this context
+    point.time = p.time;
     cloud.push_back(point);
   }
 
     if(cloud.size() < 5){return;}
     sensor_msgs::PointCloud2 output;
     pcl::toROSMsg(cloud, output);
-    output.header.frame_id = "timoo";
-    // output.header.stamp =ros::Time(points_data->timestamp);
-    output.header.stamp = ros::Time::now();
+    output.header.frame_id = frame_id;
+    output.header.stamp = ResolveCloudStamp(points_data, use_sensor_timestamp);
     points_pub_.publish(output);
     //std::cout << "time stamp == " << ros::Time::now()<< std::endl;
 }
 
 void AddPointCloud(const base::TimooPointCloudPtr& points_data,
-                   pcl::PointCloud<pcl::PointXYZI>& cloud, ros::Publisher points_pub_) {
+                   pcl::PointCloud<pcl::PointXYZI>& cloud,
+                   const ros::Publisher& points_pub_,
+                   const std::string& frame_id,
+                   bool use_sensor_timestamp) {
   for (const auto& p : points_data->points) {
     if ((!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) && remove_invalid_points) {
       continue;
@@ -87,9 +103,8 @@ void AddPointCloud(const base::TimooPointCloudPtr& points_data,
     if(cloud.size() < 5){return;}
     sensor_msgs::PointCloud2 output;
     pcl::toROSMsg(cloud, output);
-    output.header.frame_id = "timoo";
-    // output.header.stamp =ros::Time(points_data->timestamp);
-    output.header.stamp = ros::Time::now();
+    output.header.frame_id = frame_id;
+    output.header.stamp = ResolveCloudStamp(points_data, use_sensor_timestamp);
     points_pub_.publish(output);
     //std::cout << "time stamp == " << ros::Time::now()<< std::endl;
 }
@@ -99,12 +114,12 @@ int main(int argc, char **argv) {
     // ROS init
     ros::init(argc, argv, "timoo_ros_driver_node");
     ros::NodeHandle nh;
-    ros::NodeHandle private_nh("~");
 
     double cut_angle, min_distance, max_distance;
     int udp_port, status_port,imu_port;
     bool fixed_points_count, use_imu_data, use_gps_clock, use_tail_time;
-    std::string lidar_type, host_ip;
+    bool use_sensor_timestamp;
+    std::string lidar_type, host_ip, frame_id;
 
     nh.param("cut_angle", cut_angle, 0.0);
     nh.param("udp_port", udp_port, 2368);
@@ -113,20 +128,22 @@ int main(int argc, char **argv) {
     nh.param("remove_invalid_points", remove_invalid_points, false);
     nh.param("lidar_type", lidar_type, std::string("TIMOO32"));
     nh.param("host_ip", host_ip, std::string("192.168.1.106"));
+    nh.param("frame_id", frame_id, std::string("timoo"));
     nh.param("min_distance", min_distance, 0.4);
     nh.param("max_distance", max_distance, 150.0);
     nh.param("imu_port", imu_port, 7788);
     nh.param("use_imu_data", use_imu_data, false);
     nh.param("use_gps_clock", use_gps_clock, false);
     nh.param("use_tail_time", use_tail_time, false);
+    nh.param("use_sensor_timestamp", use_sensor_timestamp, false);
 
     
 
-    ros::Publisher points_pub_ = private_nh.advertise<sensor_msgs::PointCloud2>("timoo_points", 1);
-    ros::Publisher imu_pub_ = private_nh.advertise<sensor_msgs::Imu>("imu_data", 10);
+    ros::Publisher points_pub_ = nh.advertise<sensor_msgs::PointCloud2>("timoo_points", 1);
+    ros::Publisher imu_pub_ = nh.advertise<sensor_msgs::Imu>("imu_data", 10);
 
     // 外部回调函数
-    auto PubFunction = [points_pub_](base::TimooPointCloudPtr points_data) {
+    auto PubFunction = [points_pub_, frame_id, use_sensor_timestamp](base::TimooPointCloudPtr points_data) {
         std::cout << "pub points num:" << points_data->points.size() << std::endl;
         // if (points_data->points.size() > 100000) {
             // std::cout << "------------------------------------------" << std::endl;
@@ -136,21 +153,20 @@ int main(int argc, char **argv) {
         // std::cout << "first timestamp:" << std::to_string(points_data->points.front().time) << std::endl;
         #if defined(POINT_TYPE_XYZI)
             pcl::PointCloud<pcl::PointXYZI> cloud;
-            AddPointCloud(points_data, cloud,points_pub_);
+            AddPointCloud(points_data, cloud, points_pub_, frame_id, use_sensor_timestamp);
             //std::cout << "POINTXYZIRT cloud size() === " << cloud.size() <<std::endl; 
         #endif
 
         #if defined(POINT_TYPE_XYZIRT)
             pcl::PointCloud<TimooPointXYZIRT> cloud;
-            AddPointCloud(points_data, cloud,points_pub_);
+            AddPointCloud(points_data, cloud, points_pub_, frame_id, use_sensor_timestamp);
             //std::cout << "POINTXYZIRT cloud size() === " << cloud.size() <<std::endl; 
         #endif
     };
 
-    auto PubFunction_imu = [imu_pub_](base::TimooIMUPtr imu_data) {
+    auto PubFunction_imu = [imu_pub_, frame_id](base::TimooIMUPtr imu_data) {
         // 从传感器获取数据 - 这里用伪代码表示
         // 实际应用中需要替换为您的实际数据读取代码
-        uint32_t time = imu_data->time;
         float Accel_x = imu_data->Accel_x;
         float Accel_y = imu_data->Accel_y;
         float Accel_z = imu_data->Accel_z;
@@ -164,7 +180,7 @@ int main(int argc, char **argv) {
         
         // 设置消息头和时间戳
         imu_msg.header.stamp = ros::Time::now(); // 使用ROS当前时间
-        imu_msg.header.frame_id = "timoo"; // 坐标系名称
+        imu_msg.header.frame_id = frame_id; // 坐标系名称
         
         // 温度填入x
         imu_msg.orientation.x = temperature;

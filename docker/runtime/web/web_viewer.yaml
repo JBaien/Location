@@ -3,7 +3,7 @@ web_viewer:
     cloud_port: 9001
     status_port: 9002
   topics:
-    current_cloud: /lidar1/lidar_points
+    current_cloud: /points_raw
     stable_map: /points_raw
     path: /slam/global_path
     odom: /slam/global_odom
