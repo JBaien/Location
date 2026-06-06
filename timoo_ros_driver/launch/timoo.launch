@@ -1,0 +1,27 @@
+<launch>
+    <param name="use_sim_time" value="false" />
+
+    <param name="cut_angle" value="-0.1" type="double" />
+    <param name="min_distance" value="0.2" type="double" />
+    <param name="max_distance" value="150" type="double" />
+    <param name="udp_port" value="2370" type="int" />
+    <param name="status_port" value="8605" type="int" />
+    <param name="imu_port" value="65535" type="int" />
+    <param name="use_imu_data" value="false" type="bool" />
+    <param name="fixed_points_count" value="false" type="bool" />
+    <param name="remove_invalid_points" value="false" type="bool" />
+    <param name="lidar_type" value="TIMOO16" type="str" />  <!-- 目前支持雷达类型: TIMOO16, TIMOO32, TIMOO1550, TIMOO1550STD, TIMOO128, TIMOO128V -->
+    <param name="host_ip" value="" type="str" />  <!-- 枚举值作为字符串 -->
+    <param name="use_gps_clock" value="false" type="bool" />
+    <param name="use_tail_time" value="true" type="bool" />
+
+    <!-- <rosparam command="load" file="$(find lidar_driver)/launch/params.yaml" /> -->
+	<node name="timoo_ros_driver_node" pkg="timoo_ros_driver" type="timoo_ros_driver_node" output="screen">
+    </node>
+
+	<!-- <group if="$(arg rviz_enable)">
+		<node name="rviz" pkg="rviz" type="rviz" respawn="true"
+				args="-d $(find lidar_driver)/config/display_lidar_points.rviz"/>
+    </group> -->
+
+</launch>

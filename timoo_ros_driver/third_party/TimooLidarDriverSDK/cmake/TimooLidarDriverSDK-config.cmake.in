@@ -1,0 +1,13 @@
+@PACKAGE_INIT@
+
+# Compute paths
+get_filename_component(TimooLidarDriverSDK_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+set(TimooLidarDriverSDK_INCLUDE_DIRS "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+set(TimooLidarDriverSDK_LIBRARY_DIRS "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
+
+# Our library dependencies (contains definitions for IMPORTED targets)
+# include("${TimooLidarDriverSDK_CMAKE_DIR}/TimooLidarDriverSDK-targets.cmake")
+file(GLOB TimooLidarDriverSDK_LIBRARIES_SO ${TimooLidarDriverSDK_LIBRARY_DIRS}/*.so)
+file(GLOB TimooLidarDriverSDK_LIBRARIES_A ${TimooLidarDriverSDK_LIBRARY_DIRS}/*.a)
+# These are IMPORTED targets created by yaml-cpp-targets.cmake
+set(TimooLidarDriverSDK_LIBRARIES  ${TimooLidarDriverSDK_LIBRARIES_SO} ${TimooLidarDriverSDK_LIBRARIES_A})

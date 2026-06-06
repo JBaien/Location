@@ -1,0 +1,12 @@
+# Changelog
+
+This changelog notes all release information about TimooLidarDriverSDK.
+
+Format follows: version like v0.0.1 and change type like 'Added', 'Changed', 'Deprecated', 'Removed', 'Fixed', 'Security'
+
+Unreleased tag means the following content until the version tag has not been released.
+
+## [Unreleased]
+### Changed
+- 初始化仓库
+- 增加16线解析
