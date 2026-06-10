@@ -4,6 +4,7 @@
 
 #include "target_localizer/cylinder_geometry.h"
 #include "target_localizer/equipment_geometry.h"
+#include "target_localizer/modbus_register.h"
 #include "target_localizer/target_tracker.h"
 
 namespace target_localizer {
@@ -268,6 +269,19 @@ TEST(EquipmentGeometryTest, SubtractsEquipmentHalfWidthFromSideDistances) {
     EXPECT_NEAR(result.left_rear_mm, 500.0, 1.0);
     EXPECT_NEAR(result.right_front_mm, 500.0, 1.0);
     EXPECT_NEAR(result.right_rear_mm, 500.0, 1.0);
+}
+
+TEST(ModbusRegisterTest, ScalesSignedAndUnsignedRegistersSeparately) {
+    RegisterConfig signed_angle;
+    signed_angle.scale = 0.1;
+    signed_angle.is_signed = true;
+
+    RegisterConfig unsigned_distance;
+    unsigned_distance.scale = 1.0;
+    unsigned_distance.is_signed = false;
+
+    EXPECT_NEAR(scaleRegisterValue(0x9C40, signed_angle), -2553.6, 1e-9);
+    EXPECT_NEAR(scaleRegisterValue(0x9C40, unsigned_distance), 40000.0, 1e-9);
 }
 
 TEST(EquipmentGeometryTest, ReportsOverallStatusAndPerDistanceQuality) {

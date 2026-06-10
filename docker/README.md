@@ -192,7 +192,7 @@ docker run -d \
   --network host \
   -e ROS_MASTER_URI=http://127.0.0.1:11311 \
   -e ROS_IP=127.0.0.1 \
-  -e WEB_HTTP_PORT=8080 \
+  -e WEB_HTTP_PORT=18080 \
   -v /opt/mine-lidar/docker/runtime:/config \
   -v /opt/mine-lidar/docker/runtime/bags:/data/bags \
   mine-lidar-runtime:melodic-arm64 \
@@ -242,7 +242,7 @@ docker logs -f --tail 200 mine-lidar-runtime-arm64
 浏览器访问：
 
 ```text
-http://主机IP:8080
+http://主机IP:18080
 ```
 
 WebSocket 端口：
@@ -469,7 +469,7 @@ ExecStartPre=-/usr/bin/docker rm -f mine-lidar-runtime-arm64
 ExecStart=/usr/bin/docker run --name mine-lidar-runtime-arm64 --privileged --network host \
   -e ROS_MASTER_URI=http://127.0.0.1:11311 \
   -e ROS_IP=127.0.0.1 \
-  -e WEB_HTTP_PORT=8080 \
+  -e WEB_HTTP_PORT=18080 \
   -v /opt/mine-lidar/docker/runtime:/config \
   -v /opt/mine-lidar/docker/runtime/bags:/data/bags \
   mine-lidar-runtime:melodic-arm64 bringup

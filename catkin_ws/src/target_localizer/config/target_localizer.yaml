@@ -91,12 +91,12 @@ modbus:
   timeout_ms: 500
   ins:
     enabled: false
-    roll: {address: 0, scale: 0.01}
-    pitch: {address: 1, scale: 0.01}
-    yaw: {address: 2, scale: 0.01}
+    roll: {address: 0, scale: 0.01, signed: true}
+    pitch: {address: 1, scale: 0.01, signed: true}
+    yaw: {address: 2, scale: 0.01, signed: true}
   mmwave:
     enabled: false
-    left_front: {address: 10, scale: 1.0}
-    left_rear: {address: 11, scale: 1.0}
-    right_front: {address: 12, scale: 1.0}
-    right_rear: {address: 13, scale: 1.0}
+    left_front: {address: 10, scale: 1.0, signed: false}
+    left_rear: {address: 11, scale: 1.0, signed: false}
+    right_front: {address: 12, scale: 1.0, signed: false}
+    right_rear: {address: 13, scale: 1.0, signed: false}

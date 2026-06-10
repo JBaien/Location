@@ -48,7 +48,7 @@ load_driver_family() {
 serve_web() {
   if [ -d "${MINE_WEB_DIST}" ]; then
     cd "${MINE_WEB_DIST}"
-    python3 -m http.server "${WEB_HTTP_PORT:-8080}" --bind 0.0.0.0
+    python3 -m http.server "${WEB_HTTP_PORT:-18080}" --bind 0.0.0.0
   else
     echo "Web dist directory not found: ${MINE_WEB_DIST}" >&2
     return 1

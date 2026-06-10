@@ -17,7 +17,7 @@ services:
     environment:
       ROS_MASTER_URI: http://127.0.0.1:11311
       ROS_IP: 127.0.0.1
-      WEB_HTTP_PORT: 8080
+      WEB_HTTP_PORT: 18080
     volumes:
       - ./runtime:/config
       - ./runtime/bags:/data/bags

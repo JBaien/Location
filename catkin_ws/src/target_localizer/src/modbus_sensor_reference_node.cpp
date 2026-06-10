@@ -8,6 +8,8 @@
 #include <ros/ros.h>
 #include <target_localizer/EquipmentState.h>
 
+#include "target_localizer/modbus_register.h"
+
 namespace target_localizer {
 namespace {
 
@@ -19,15 +21,6 @@ struct ModbusDeviceConfig {
     int unit_id = 1;
     int timeout_ms = 500;
 };
-
-struct RegisterConfig {
-    int address = 0;
-    double scale = 1.0;
-};
-
-std::int16_t signedRegister(std::uint16_t value) {
-    return static_cast<std::int16_t>(value);
-}
 
 class ModbusClient {
 public:
@@ -140,6 +133,7 @@ private:
     void loadRegister(const std::string& ns, RegisterConfig& config) {
         loadParam(ns + "/address", config.address);
         loadParam(ns + "/scale", config.scale);
+        loadParam(ns + "/signed", config.is_signed);
     }
 
     void loadConfig() {
@@ -168,7 +162,7 @@ private:
         if (index < 0 || index >= static_cast<int>(regs.size())) {
             return 0.0;
         }
-        return static_cast<double>(signedRegister(regs[index])) * config.scale;
+        return scaleRegisterValue(regs[index], config);
     }
 
     bool readGroup(const ModbusDeviceConfig& device,
@@ -304,13 +298,13 @@ private:
     ModbusDeviceConfig device_;
     bool ins_enabled_ = false;
     bool radar_enabled_ = false;
-    RegisterConfig roll_{0, 0.01};
-    RegisterConfig pitch_{1, 0.01};
-    RegisterConfig yaw_{2, 0.01};
-    RegisterConfig left_front_{10, 1.0};
-    RegisterConfig left_rear_{11, 1.0};
-    RegisterConfig right_front_{12, 1.0};
-    RegisterConfig right_rear_{13, 1.0};
+    RegisterConfig roll_{0, 0.01, true};
+    RegisterConfig pitch_{1, 0.01, true};
+    RegisterConfig yaw_{2, 0.01, true};
+    RegisterConfig left_front_{10, 1.0, false};
+    RegisterConfig left_rear_{11, 1.0, false};
+    RegisterConfig right_front_{12, 1.0, false};
+    RegisterConfig right_rear_{13, 1.0, false};
 };
 
 }  // namespace
