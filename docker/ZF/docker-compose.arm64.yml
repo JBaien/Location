@@ -1,0 +1,29 @@
+services:
+  mine-lidar-zf:
+    platform: linux/arm64
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.arm64
+      args:
+        DOCKER_REGISTRY: docker.1ms.run
+        NODE_IMAGE_TAG: 20-bookworm
+        TARGETPLATFORM: linux/arm64
+        UBUNTU_APT_MIRROR: https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports
+        ROS_APT_MIRROR: https://mirrors.tuna.tsinghua.edu.cn/ros/ubuntu
+        NPM_REGISTRY: https://registry.npmmirror.com
+    image: mine-lidar-runtime:melodic-arm64
+    container_name: mine-lidar-zf-arm64
+    network_mode: host
+    privileged: true
+    restart: unless-stopped
+    environment:
+      ROS_MASTER_URI: http://127.0.0.1:11311
+      ROS_IP: 127.0.0.1
+      WEB_HTTP_PORT: 18080
+    volumes:
+      - ./runtime:/config
+      - ./runtime/bags:/data/bags
+    command:
+      - bringup
+      - enable_target_localizer:=true
+      - enable_record:=false

@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    ZF 两雷达静态外参配置，Docker 部署后可直接修改本挂载文件。
+
+    参数顺序：
+      x y z yaw pitch roll parent_frame child_frame
+
+    单位：
+      x/y/z 使用米，yaw/pitch/roll 使用弧度。
+
+    TF 关系：
+      base_link -> lidar1
+      lidar1    -> lidar2
+
+    这里的 base_link 位于两雷达中间，并补偿两雷达相对地面的安装倾角。
+  -->
+  <node pkg="tf2_ros"
+        type="static_transform_publisher"
+        name="base_to_lidar1"
+        args="0 -1.625008547 -0.026000000 0.002878272 0.011138236 0.502554918 base_link lidar1" />
+
+  <node pkg="tf2_ros"
+        type="static_transform_publisher"
+        name="lidar1_to_lidar2"
+        args="0.008774664 2.873251572 -1.519757718 -0.012259316 -0.039074974 -1.005860421 lidar1 lidar2" />
+</launch>

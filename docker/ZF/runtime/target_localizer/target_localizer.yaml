@@ -1,0 +1,111 @@
+input_topic: /points_raw
+target_frame: base_link
+
+# ZF 的 base_link 约定：
+#   车体前方：-X
+#   车体后方：+X
+#   lidar2 位于 lidar1 的 +Y 方向
+#
+# 设备几何估计用 forward_sign 选择前/后采样位置：
+#   forward_sign: -1 -> 前方采样在 -X，后方采样在 +X
+#   forward_sign:  1 -> 前方采样在 +X，后方采样在 -X
+# 当前 target_localizer 代码固定把 +Y 标成 left、-Y 标成 right。
+# 当车体前方是 -X 时，真实物理左侧是 -Y，因此启用 equipment_state
+# 做左右距离审计前，还需要在代码层面对 left/right 标签做重映射。
+
+measurement_topic: /target_measurement
+xy_topic: /target_xy
+status_topic: /target_status
+marker_topic: /target_marker
+roi_topic: /target_cloud_roi
+
+roi_x_min: -10.0
+roi_x_max: 10.0
+roi_y_min: -10.0
+roi_y_max: 10.0
+roi_z_min: -3.0
+roi_z_max: 3.0
+
+voxel_leaf: 0.02
+reflector_intensity_min: 180
+sor_mean_k: 20
+sor_stddev: 1.0
+normal_k: 20
+max_iterations: 200
+normal_distance_weight: 0.1
+cylinder_distance_threshold: 0.02
+radius_min: 0.065
+radius_max: 0.085
+min_candidate_points: 10
+
+reference_z: -0.142
+zero_x: 0.0
+zero_y: 0.0
+
+min_good_inliers: 15
+good_residual_rms: 0.015
+lost_after_misses: 3
+hold_duration: 0.0
+min_update_inliers: 15
+
+equipment_state_topic: /equipment_state
+required_frame_id: base_link
+enable_tf_transform: false
+max_pointcloud_age_sec: 0.5
+distance_filter_alpha: 0.3
+max_distance_jump_m: 0.5
+attitude_filter_alpha: 0.1
+max_attitude_jump_deg: 3.0
+ground_x_min: -50.0
+ground_x_max: 50.0
+ground_y_min: -20.0
+ground_y_max: 20.0
+ground_z_min: -5.0
+ground_z_max: 10.0
+wall_x_min: -50.0
+wall_x_max: 50.0
+wall_y_abs_min: 0.8
+wall_y_abs_max: 20
+wall_z_min: -5.0
+wall_z_max: 10.0
+front_sample_distance_m: 4.5
+rear_sample_distance_m: 0.1
+sample_window_x_m: 0.4
+side_y_abs_min: 1.5
+side_y_abs_max: 20.0
+side_z_min: -2.0
+side_z_max: 0.5
+distance_percentile: 0.1
+equipment_half_width_m: 2.0
+min_valid_clearance_m: 0.0
+max_ground_plane_rmse: 0.08
+min_ground_normal_z: 0.85
+max_wall_direction_diff_deg: 8.0
+min_ground_points: 20
+min_wall_points: 20
+min_distance_points: 5
+min_total_points: 100
+forward_sign: -1
+# 兼容旧配置项：当前代码会读取这个值，但左右判定固定使用 +Y=left、-Y=right，
+# 所以 left_sign 不会改变实际输出。
+left_sign: 1
+
+modbus:
+  output_topic: /sensor_reference
+  frame_id: base_link
+  rate_hz: 10.0
+  host: 192.168.188.100
+  port: 502
+  unit_id: 1
+  timeout_ms: 500
+  ins:
+    enabled: true
+    roll: {address: 113, scale: 0.1, signed: true}
+    pitch: {address: 114, scale: 0.1, signed: true}
+    yaw: {address: 112, scale: 0.1, signed: true}
+  mmwave:
+    enabled: false
+    left_front: {address: 101, scale: 1.0, signed: false}
+    left_rear: {address: 102, scale: 1.0, signed: false}
+    right_front: {address: 103, scale: 1.0, signed: false}
+    right_rear: {address: 104, scale: 1.0, signed: false}

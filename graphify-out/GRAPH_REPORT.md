@@ -1,15 +1,15 @@
-# Graph Report - /home/sf/Desktop/Location  (2026-06-01)
+# Graph Report - /home/sf/Desktop/Location  (2026-06-08)
 
 ## Corpus Check
 - cluster-only mode — file stats not available
 
 ## Summary
-- 897 nodes · 1261 edges · 60 communities (47 shown, 13 thin omitted)
+- 897 nodes · 1261 edges · 61 communities (47 shown, 14 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 24 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `f3e4efc9`
+- Built from commit: `9ddb29e5`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -65,6 +65,7 @@
 - [[_COMMUNITY_Web README|Web README]]
 - [[_COMMUNITY_Docker README|Docker README]]
 - [[_COMMUNITY_Runtime Lidar Fusion Config|Runtime Lidar Fusion Config]]
+- [[_COMMUNITY_Community 60|Community 60]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `mine web bridge node` - 132 edges
@@ -93,7 +94,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (60 total, 13 thin omitted)
+## Communities (61 total, 14 thin omitted)
 
 ### Community 0 - "Mine Web Bridge"
 Cohesion: 0.03
@@ -148,16 +149,12 @@ Cohesion: 0.16
 Nodes (20): namespace, PointCloud2, size_t, string, T, Time, uint64_t, uint8_t (+12 more)
 
 ### Community 13 - "Map Transform Snapshot"
-Cohesion: 0.12
-Nodes (17): array, vector, MapTransformSnapshot, rotation, translation, PathPoint, stamp, PoseState (+9 more)
+Cohesion: 0.15
+Nodes (16): array, MapTransformSnapshot, rotation, translation, PathPoint, stamp, PoseState, qw (+8 more)
 
 ### Community 14 - "Timoo Cloud Node"
 Cohesion: 0.10
 Nodes (14): namespace, shared_ptr, ConstPtr, NodeHandle, string, timooStatus, CloudNodeConfig, conv_ (+6 more)
-
-### Community 15 - "JSON Status Builder"
-Cohesion: 0.15
-Nodes (4): string, TimerEvent, ostringstream, StringConstPtr
 
 ### Community 16 - "TypeScript Config"
 Cohesion: 0.11
@@ -172,8 +169,8 @@ Cohesion: 0.11
 Nodes (17): dependencies, three, vite, @vitejs/plugin-vue, vue, devDependencies, @types/three, typescript (+9 more)
 
 ### Community 19 - "Cylinder Fitting Tracker"
-Cohesion: 0.20
-Nodes (9): CylinderModel, PointCloud2ConstPtr, Ptr, TrackerOutput, Vector3d, CloudT, Header, statusText() (+1 more)
+Cohesion: 0.23
+Nodes (7): PointCloud2ConstPtr, Ptr, TrackerOutput, CloudT, Header, statusText(), TargetStatus
 
 ### Community 20 - "Equipment Geometry Tests"
 Cohesion: 0.12
@@ -240,22 +237,26 @@ Cohesion: 0.40
 Nodes (4): HTTP_PROXY, HTTPS_PROXY, NO_PROXY, build_arm64.sh script
 
 ### Community 37 - "Cylinder Geometry Test"
-Cohesion: 0.60
-Nodes (5): CylinderModel, Vector3d, CylinderGeometryTest, centerAtReferenceHeight(), radialResidual()
+Cohesion: 0.31
+Nodes (7): CylinderModel, Vector3d, CylinderModel, Vector3d, CylinderGeometryTest, centerAtReferenceHeight(), radialResidual()
 
 ### Community 38 - "Timoo Packages"
 Cohesion: 0.40
 Nodes (5): libpcap library, timoo_driver package, timoo_msgs package, timoo_pointcloud package, yaml-cpp library
 
+### Community 60 - "Community 60"
+Cohesion: 0.22
+Nodes (3): TimerEvent, vector, ostringstream
+
 ## Knowledge Gaps
 - **422 isolated node(s):** `PreToolUse`, `class`, `namespace`, `NodeHandle`, `string` (+417 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **13 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **14 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `mine web bridge node` connect `Mine Web Bridge` to `Modbus Sensor Reference`, `Equipment State Snapshot`, `WebSocket Server`, `Equipment State Estimation`, `Driver Diagnostics`, `Target Localizer`, `Map Transform Snapshot`, `JSON Status Builder`, `Cloud Path Tracking`, `Progressive Reveal State`, `Target XY Snapshot`, `Odometry Handling`, `Equipment State Callbacks`, `Multi Lidar Fusion`?**
+- **Why does `mine web bridge node` connect `Mine Web Bridge` to `Modbus Sensor Reference`, `Equipment State Snapshot`, `WebSocket Server`, `Equipment State Estimation`, `Driver Diagnostics`, `Target Localizer`, `Map Transform Snapshot`, `Odometry Handling`, `JSON Status Builder`, `Cloud Path Tracking`, `Progressive Reveal State`, `Target XY Snapshot`, `Community 60`, `Equipment State Callbacks`, `Multi Lidar Fusion`?**
   _High betweenness centrality (0.348) - this node is a cross-community bridge._
 - **Why does `target localizer node` connect `Target Localizer` to `Modbus Sensor Reference`, `Key-Value Diagnostics`, `Cylinder Geometry Test`, `Equipment State Estimation`, `Documentation Files`, `Cylinder Detection Config`, `Cylinder Fitting Tracker`, `Target Tracker`, `Multi Lidar Fusion`?**
   _High betweenness centrality (0.151) - this node is a cross-community bridge._
