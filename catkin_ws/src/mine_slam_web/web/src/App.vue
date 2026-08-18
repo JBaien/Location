@@ -13,12 +13,14 @@ const statusUrl = `ws://${host}:9002/status`;
 
 const sceneEl = ref<HTMLElement | null>(null);
 const colorMode = ref<ColorMode>('height');
-const layers = ref<LayerState>({ current: true, stable: true, path: true, reflector: true, grid: true });
+const layers = ref<LayerState>({ current: true, mesh: true, stable: true, path: true, reflector: true, grid: true });
 const cloudConnected = ref(false);
 const statusConnected = ref(false);
 const status = ref<ViewerStatus | null>(null);
 const menuOpen = ref(false);
 const pointSize = ref(0.035);
+const meshOpacity = ref(0.48);
+const meshTriangles = ref(0);
 const currentTime = ref('');
 
 let scene: SceneView | null = null;
@@ -192,14 +194,17 @@ onMounted(() => {
   scene.setLayers(layers.value);
   scene.setColorMode(colorMode.value);
   scene.setPointSize(pointSize.value);
+  scene.setMeshOpacity(meshOpacity.value);
   window.addEventListener('keydown', handleKeydown);
   scene.onStats((stats) => {
+    meshTriangles.value = scene?.currentMeshLayer.getTriangleCount() ?? 0;
     window.__MINE_SLAM_VIEWER_STATS__ = {
       fps: stats.fps,
       frameMs: stats.frameMs,
       currentPoints: status.value?.current_cloud_points ?? 0,
       stablePoints: status.value?.stable_map_points ?? 0,
       pathPoints: status.value?.path.length ?? 0,
+      meshTriangles: meshTriangles.value,
       cloudConnected: cloudConnected.value,
       statusConnected: statusConnected.value
     };
@@ -231,6 +236,7 @@ onMounted(() => {
 watch(colorMode, (mode) => scene?.setColorMode(mode));
 watch(layers, (nextLayers) => scene?.setLayers(nextLayers), { deep: true });
 watch(pointSize, (size) => scene?.setPointSize(size));
+watch(meshOpacity, (opacity) => scene?.setMeshOpacity(opacity));
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown);
@@ -396,6 +402,14 @@ onBeforeUnmount(() => {
           <span>点云大小</span>
           <strong>{{ pointSize.toFixed(3) }}</strong>
         </div>
+        <div class="setting-row">
+          <span>实时表面</span>
+          <strong>{{ layers.mesh ? '显示' : '隐藏' }}</strong>
+        </div>
+        <div class="setting-row">
+          <span>表面三角形</span>
+          <strong>{{ meshTriangles }}</strong>
+        </div>
       </section>
       <LayerPanel :layers="layers" @change="layers = $event" />
       <ColorModeSelector :mode="colorMode" @change="colorMode = $event" />
@@ -405,6 +419,11 @@ onBeforeUnmount(() => {
           <span>点大小</span>
           <strong>{{ pointSize.toFixed(3) }}</strong>
           <input v-model.number="pointSize" type="range" min="0.01" max="0.12" step="0.005" />
+        </label>
+        <label class="range-row">
+          <span>表面透明度</span>
+          <strong>{{ meshOpacity.toFixed(2) }}</strong>
+          <input v-model.number="meshOpacity" type="range" min="0.10" max="0.90" step="0.05" />
         </label>
       </section>
     </aside>

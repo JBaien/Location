@@ -1,11 +1,14 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ColorMode } from './ColorMap';
-import { LayerDebug, ParsedCloud, PointCloudLayer } from './PointCloudLayer';
+import type { ParsedCloud } from './CloudTypes';
+import { LayerDebug, PointCloudLayer } from './PointCloudLayer';
 import { PathLayer } from './PathLayer';
+import { ScanMeshLayer, type ScanMeshDebug } from './ScanMeshLayer';
 
 export interface LayerState {
   current: boolean;
+  mesh: boolean;
   stable: boolean;
   path: boolean;
   reflector: boolean;
@@ -19,12 +22,14 @@ export interface RenderStats {
 
 export interface SceneDebug {
   current: LayerDebug;
+  mesh: ScanMeshDebug;
   stable: LayerDebug;
   path_position_count: number;
 }
 
 export class SceneView {
   readonly currentLayer = new PointCloudLayer('current_cloud');
+  readonly currentMeshLayer = new ScanMeshLayer();
   readonly stableLayer = new PointCloudLayer('stable_map');
   readonly pathLayer = new PathLayer();
 
@@ -37,7 +42,14 @@ export class SceneView {
   private resizeObserver: ResizeObserver;
   private animationFrame = 0;
   private colorMode: ColorMode = 'height';
-  private layerState: LayerState = { current: true, stable: true, path: true, reflector: true, grid: true };
+  private layerState: LayerState = {
+    current: true,
+    mesh: true,
+    stable: true,
+    path: true,
+    reflector: true,
+    grid: true
+  };
   private statsCallback: ((stats: RenderStats) => void) | null = null;
   private lastFrameTime = performance.now();
   private statsWindowStart = performance.now();
@@ -85,6 +97,7 @@ export class SceneView {
     this.scene.add(this.grid);
     this.axisGuide = this.createAxisGuide();
     this.scene.add(this.axisGuide);
+    this.scene.add(this.currentMeshLayer.mesh);
     this.scene.add(this.currentLayer.points);
     this.scene.add(this.stableLayer.points);
     this.scene.add(this.pathLayer.line);
@@ -99,6 +112,7 @@ export class SceneView {
   dispose(): void {
     window.cancelAnimationFrame(this.animationFrame);
     this.resizeObserver.disconnect();
+    this.currentMeshLayer.dispose();
     this.renderer.dispose();
     this.host.innerHTML = '';
   }
@@ -106,6 +120,7 @@ export class SceneView {
   updateCloud(cloud: ParsedCloud): void {
     if (cloud.cloudType === 1) {
       this.currentLayer.updateCloud(cloud, this.colorMode, this.layerState.reflector, this.layerState.current);
+      this.currentMeshLayer.updateCloud(cloud, this.colorMode, this.layerState.reflector, this.layerState.mesh);
       if (!this.autoFitCurrentDone && !this.autoFitStableDone && cloud.pointCount > 0) {
         this.fitCurrent();
         this.autoFitCurrentDone = true;
@@ -131,6 +146,7 @@ export class SceneView {
   setLayers(layers: LayerState): void {
     this.layerState = { ...layers };
     this.currentLayer.setVisible(layers.current);
+    this.currentMeshLayer.setVisible(layers.mesh);
     this.stableLayer.setVisible(layers.stable);
     this.pathLayer.setVisible(layers.path);
     this.grid.visible = layers.grid;
@@ -145,6 +161,10 @@ export class SceneView {
   setPointSize(size: number): void {
     this.currentLayer.setPointSize(size);
     this.stableLayer.setPointSize(size);
+  }
+
+  setMeshOpacity(opacity: number): void {
+    this.currentMeshLayer.setOpacity(opacity);
   }
 
   onStats(callback: (stats: RenderStats) => void): void {
@@ -193,6 +213,7 @@ export class SceneView {
   getDebug(): SceneDebug {
     return {
       current: this.currentLayer.getDebug(),
+      mesh: this.currentMeshLayer.getDebug(),
       stable: this.stableLayer.getDebug(),
       path_position_count: this.pathLayer.getPointCount()
     };
@@ -200,6 +221,7 @@ export class SceneView {
 
   private recolor(): void {
     this.currentLayer.recolor(this.colorMode, this.layerState.reflector);
+    this.currentMeshLayer.recolor(this.colorMode, this.layerState.reflector);
     this.stableLayer.recolor(this.colorMode, this.layerState.reflector);
   }
 

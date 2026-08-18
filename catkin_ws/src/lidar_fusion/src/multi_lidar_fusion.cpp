@@ -203,10 +203,11 @@ void MultiLidarFusion::processClouds(
 
         std::vector<PointCloud::Ptr> transformed_clouds;
         transformed_clouds.reserve(clouds.size());
-        for (const auto& cloud : clouds) {
+        for (size_t i = 0; i < clouds.size(); ++i) {
             PointCloud::Ptr transformed(new PointCloud);
-            if (!transformCloudToOutputFrame(cloud, output_stamp,
-                                             *transformed)) {
+            if (!transformCloudToOutputFrame(
+                    clouds[i], output_stamp, static_cast<std::uint8_t>(i),
+                    *transformed)) {
                 ++diagnostics_.dropped_tf;
                 return;
             }
@@ -293,7 +294,7 @@ bool MultiLidarFusion::hasRequiredFields(const CloudMsg& cloud) const {
 
 bool MultiLidarFusion::transformCloudToOutputFrame(
     const CloudConstPtr& cloud, const ros::Time& output_stamp,
-    PointCloud& transformed_cloud) {
+    std::uint8_t lidar_id, PointCloud& transformed_cloud) {
     geometry_msgs::TransformStamped transform;
     try {
         if (!tf_buffer_.canTransform(config_.output_frame_id,
@@ -315,7 +316,7 @@ bool MultiLidarFusion::transformCloudToOutputFrame(
         return false;
     }
 
-    PointCloud input_cloud;
+    pcl::PointCloud<PointXYZIRT> input_cloud;
     try {
         pcl::fromROSMsg(*cloud, input_cloud);
     } catch (const std::exception& e) {
@@ -348,6 +349,7 @@ bool MultiLidarFusion::transformCloudToOutputFrame(
         dst.z = q.z();
         dst.intensity = src.intensity;
         dst.ring = src.ring;
+        dst.lidar_id = lidar_id;
         dst.time = src.time + time_offset;
     }
 

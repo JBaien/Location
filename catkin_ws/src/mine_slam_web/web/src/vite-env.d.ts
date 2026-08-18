@@ -13,6 +13,7 @@ interface Window {
     currentPoints: number;
     stablePoints: number;
     pathPoints: number;
+    meshTriangles: number;
     cloudConnected: boolean;
     statusConnected: boolean;
   };
