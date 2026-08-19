@@ -8,7 +8,7 @@
 namespace mine_slam_web {
 
 constexpr std::uint32_t kCloudPacketMagic = 0x4D504344;  // MPCD
-constexpr std::uint16_t kCloudPacketVersion = 2;
+constexpr std::uint16_t kCloudPacketVersion = 3;
 
 enum CloudType : std::uint16_t {
   CLOUD_CURRENT = 1,
@@ -22,6 +22,8 @@ enum CloudFieldMask : std::uint32_t {
   FIELD_RGB = 1u << 3,  // Reserved for the legacy version-1 packet.
   FIELD_RING = 1u << 4,
   FIELD_TIME = 1u << 5,
+  FIELD_AZIMUTH = 1u << 6,
+  FIELD_RANGE = 1u << 7,
 };
 
 #pragma pack(push, 1)
@@ -34,14 +36,17 @@ struct CloudPacketHeader {
   std::uint32_t fields_mask;
 };
 
-// Version-2 point layout, 24 bytes. Ring and time are retained so the browser
-// can reconstruct a scan-line mesh without running a global surface algorithm.
+// Version-3 point layout, 32 bytes. azimuth and range are measured in the
+// source lidar frame before TF. They give the browser stable scan columns even
+// when two offset/rotated lidars are fused into base_link.
 struct WebPoint {
   float x;
   float y;
   float z;
   float intensity;
   float time;
+  float azimuth;
+  float range;
   std::uint16_t ring;
   std::uint8_t lidar_id;
   std::uint8_t class_id;
@@ -50,8 +55,8 @@ struct WebPoint {
 
 static_assert(sizeof(CloudPacketHeader) == 24,
               "CloudPacketHeader layout changed unexpectedly");
-static_assert(sizeof(WebPoint) == 24,
-              "Version-2 WebPoint layout changed unexpectedly");
+static_assert(sizeof(WebPoint) == 32,
+              "Version-3 WebPoint layout changed unexpectedly");
 
 struct CloudEncodeOptions {
   CloudType cloud_type = CLOUD_CURRENT;
