@@ -12,9 +12,9 @@ web_viewer:
     sensor_reference: /sensor_reference
     target_xy: /target_xy
   current_cloud:
-    # 0 means no bridge-side throttling; follow the incoming cloud rate.
+    # Follow the incoming cloud rate and retain the original scan vertices.
     send_rate_hz: 0.0
-    voxel_size_m: 0.05
+    voxel_size_m: 0.0
     max_points: 200000
     transform_body_to_map: true
   stable_map:
