@@ -12,10 +12,11 @@ web_viewer:
     sensor_reference: /sensor_reference
     target_xy: /target_xy
   current_cloud:
-    # 0 means no bridge-side throttling; follow the input cloud rate (about 10 Hz).
+    # Follow the approximately 10 Hz fused scan without bridge-side throttling.
     send_rate_hz: 0.0
-    # Preserve scan-line continuity for the browser mesh.
-    voxel_size_m: 0.03
+    # Preserve all source scan vertices for the real-time mesh. max_points still
+    # provides a hard safety bound.
+    voxel_size_m: 0.0
     max_points: 200000
     transform_body_to_map: false
   stable_map:
