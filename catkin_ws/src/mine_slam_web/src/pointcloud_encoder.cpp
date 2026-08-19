@@ -103,6 +103,8 @@ CloudEncodeResult encodePointCloud2(const sensor_msgs::PointCloud2& cloud,
   const auto* lidar_field = findField(cloud, "lidar_id");
   const auto* ring_field = findField(cloud, "ring");
   const auto* time_field = findField(cloud, "time");
+  const auto* azimuth_field = findField(cloud, "azimuth");
+  const auto* range_field = findField(cloud, "range");
 
   result.fields_mask = FIELD_CLASS_ID;
   if (intensity_field != nullptr) {
@@ -116,6 +118,12 @@ CloudEncodeResult encodePointCloud2(const sensor_msgs::PointCloud2& cloud,
   }
   if (time_field != nullptr) {
     result.fields_mask |= FIELD_TIME;
+  }
+  if (azimuth_field != nullptr) {
+    result.fields_mask |= FIELD_AZIMUTH;
+  }
+  if (range_field != nullptr) {
+    result.fields_mask |= FIELD_RANGE;
   }
 
   std::vector<WebPoint> points;
@@ -145,6 +153,36 @@ CloudEncodeResult encodePointCloud2(const sensor_msgs::PointCloud2& cloud,
         continue;
       }
 
+      // Topology fields are source-lidar values and must be read before any
+      // optional display-only map transform changes XYZ.
+      point.intensity =
+          intensity_field != nullptr
+              ? readNumericAsFloat(ptr + intensity_field->offset,
+                                   *intensity_field)
+              : 0.0f;
+      point.time = time_field != nullptr
+                       ? readNumericAsFloat(ptr + time_field->offset,
+                                            *time_field)
+                       : 0.0f;
+      point.azimuth =
+          azimuth_field != nullptr
+              ? readNumericAsFloat(ptr + azimuth_field->offset, *azimuth_field)
+              : 0.0f;
+      point.range =
+          range_field != nullptr
+              ? readNumericAsFloat(ptr + range_field->offset, *range_field)
+              : 0.0f;
+      point.ring = ring_field != nullptr
+                       ? readNumericAsU16(ptr + ring_field->offset, *ring_field)
+                       : 0;
+      point.lidar_id =
+          lidar_field != nullptr
+              ? readNumericAsU8(ptr + lidar_field->offset, *lidar_field)
+              : 0;
+      point.class_id =
+          point.intensity >= options.reflector_intensity_threshold ? 3
+                                                                   : base_class;
+
       if (options.transform_to_map) {
         const double raw_x = point.x;
         const double raw_y = point.y;
@@ -162,26 +200,6 @@ CloudEncodeResult encodePointCloud2(const sensor_msgs::PointCloud2& cloud,
                                      options.rotation[8] * raw_z +
                                      options.translation[2]);
       }
-
-      point.intensity =
-          intensity_field != nullptr
-              ? readNumericAsFloat(ptr + intensity_field->offset,
-                                   *intensity_field)
-              : 0.0f;
-      point.time = time_field != nullptr
-                       ? readNumericAsFloat(ptr + time_field->offset,
-                                            *time_field)
-                       : 0.0f;
-      point.ring = ring_field != nullptr
-                       ? readNumericAsU16(ptr + ring_field->offset, *ring_field)
-                       : 0;
-      point.lidar_id =
-          lidar_field != nullptr
-              ? readNumericAsU8(ptr + lidar_field->offset, *lidar_field)
-              : 0;
-      point.class_id =
-          point.intensity >= options.reflector_intensity_threshold ? 3
-                                                                   : base_class;
 
       std::uint32_t topology_group = 0;
       if (options.cloud_type == CLOUD_CURRENT && lidar_field != nullptr &&
