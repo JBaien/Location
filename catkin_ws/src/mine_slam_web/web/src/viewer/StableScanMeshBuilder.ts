@@ -11,28 +11,34 @@ export type ScanMeshBuildReason =
 
 export interface StableScanMeshBuildOptions {
   maxTriangles: number;
-  maxRingGap: number;
   minPointsPerRing: number;
-  matchAzimuthToleranceDeg: number;
+
+  minMatchToleranceDeg: number;
+  maxMatchToleranceDeg: number;
+  matchToleranceFactor: number;
+  minAzimuthGapDeg: number;
   maxAzimuthGapDeg: number;
+  azimuthGapFactor: number;
+
   maxAlongEdgeM: number;
   baseAlongEdgeM: number;
   angularEdgeScale: number;
   maxCrossEdgeM: number;
-  baseCrossEdgeM: number;
-  crossEdgePerRange: number;
   maxDiagonalEdgeM: number;
+
   maxAlongRangeJumpM: number;
   baseAlongRangeJumpM: number;
   alongRangeJumpRatio: number;
-  maxCrossRangeJumpM: number;
-  baseCrossRangeJumpM: number;
-  crossRangeJumpRatio: number;
-  maxNormalAngleDeg: number;
+
+  maxTriangleNormalAngleDeg: number;
+  maxRunNormalAngleDeg: number;
+  maxOppositeEdgeAngleDeg: number;
+  maxOppositeEdgeLengthRatio: number;
   maxPlanarityErrorM: number;
   planarityErrorRatio: number;
   maxEdgeRatio: number;
   minTriangleAreaM2: number;
+  minRunQuads: number;
 }
 
 export interface ScanMeshBuildResult {
@@ -47,60 +53,89 @@ export interface ScanMeshBuildResult {
 
 export const DEFAULT_STABLE_SCAN_MESH_OPTIONS: StableScanMeshBuildOptions = {
   maxTriangles: 400000,
-  maxRingGap: 2,
   minPointsPerRing: 8,
 
-  // TM16 points from different channels have slightly different corrected
-  // azimuths. Actual source-lidar azimuth makes this tolerance deterministic;
-  // unlike float timestamps it does not collapse or drift after TF fusion.
-  matchAzimuthToleranceDeg: 2.0,
-  // A short missing-return run may be bridged, but never a large occlusion.
-  maxAzimuthGapDeg: 6.0,
+  // Match only genuinely corresponding source-lidar azimuths. The earlier
+  // fixed 2 degree tolerance could pair points several native columns apart.
+  minMatchToleranceDeg: 0.12,
+  maxMatchToleranceDeg: 0.65,
+  matchToleranceFactor: 1.8,
 
-  // Along-ring edges follow the angular sampling interval.
-  maxAlongEdgeM: 2.5,
-  baseAlongEdgeM: 0.16,
-  angularEdgeScale: 2.6,
+  // Native TM16 spacing is normally about 0.15-0.25 degrees at 10 Hz. Permit
+  // a few missing returns, but never bridge the multi-degree gaps that created
+  // the large floating polygons visible in the real bag.
+  minAzimuthGapDeg: 0.35,
+  maxAzimuthGapDeg: 1.20,
+  azimuthGapFactor: 4.5,
 
-  // Floor and roof are observed at a grazing angle. Their adjacent physical
-  // beams can be metres apart even though all four corners are coplanar.
-  maxCrossEdgeM: 4.5,
-  baseCrossEdgeM: 0.45,
-  crossEdgePerRange: 0.34,
-  maxDiagonalEdgeM: 5.2,
+  // A floor or roof quad can be long across adjacent vertical beams because a
+  // 16-line lidar observes those surfaces at a grazing angle. Large cross-ring
+  // edges are therefore accepted only after the planarity and strip-support
+  // checks below pass.
+  maxAlongEdgeM: 2.4,
+  baseAlongEdgeM: 0.12,
+  angularEdgeScale: 3.2,
+  maxCrossEdgeM: 8.0,
+  maxDiagonalEdgeM: 9.0,
 
-  maxAlongRangeJumpM: 2.0,
-  baseAlongRangeJumpM: 0.32,
-  alongRangeJumpRatio: 0.18,
-  maxCrossRangeJumpM: 5.0,
-  baseCrossRangeJumpM: 0.80,
-  crossRangeJumpRatio: 0.42,
+  maxAlongRangeJumpM: 2.5,
+  baseAlongRangeJumpM: 0.30,
+  alongRangeJumpRatio: 0.16,
 
-  // Planarity, rather than a very small edge-ratio limit, rejects false fans.
-  // A grazing floor quad is naturally long and thin, so edge ratios around
-  // 20-30 are valid for a 16-line lidar.
-  maxNormalAngleDeg: 62.0,
-  maxPlanarityErrorM: 0.26,
-  planarityErrorRatio: 0.055,
-  maxEdgeRatio: 45.0,
-  minTriangleAreaM2: 0.00001
+  maxTriangleNormalAngleDeg: 32.0,
+  maxRunNormalAngleDeg: 28.0,
+  maxOppositeEdgeAngleDeg: 42.0,
+  maxOppositeEdgeLengthRatio: 4.0,
+  maxPlanarityErrorM: 0.10,
+  planarityErrorRatio: 0.035,
+  maxEdgeRatio: 90.0,
+  minTriangleAreaM2: 0.00001,
+
+  // Never publish an isolated quad. A real wall/floor/roof patch produces a
+  // run of neighboring quads; isolated candidates are usually occlusion fans.
+  minRunQuads: 2
 };
 
 interface RingSequence {
   ring: number;
   indices: number[];
+  medianStep: number;
 }
 
 interface RingMatch {
   lowerPoint: number;
   upperPoint: number;
-  lowerOrder: number;
-  upperOrder: number;
   angle: number;
 }
 
 interface SensorRings {
   rings: Map<number, number[]>;
+}
+
+interface QuadCandidate {
+  lower0: number;
+  upper0: number;
+  lower1: number;
+  upper1: number;
+  normalX: number;
+  normalY: number;
+  normalZ: number;
+}
+
+interface QuadEvaluation {
+  valid: boolean;
+  normalX: number;
+  normalY: number;
+  normalZ: number;
+}
+
+interface TriangleMetrics {
+  valid: boolean;
+  area: number;
+  edgeRatio: number;
+  normalX: number;
+  normalY: number;
+  normalZ: number;
 }
 
 export function buildStableScanMesh(
@@ -116,48 +151,20 @@ export function buildStableScanMesh(
   const maxTriangles = Math.max(0, Math.floor(options.maxTriangles));
   const output = new Uint32Array(maxTriangles * 3);
   const ranges = buildRanges(cloud);
-  const matchTolerance = degreesToRadians(options.matchAzimuthToleranceDeg);
-  const maximumAzimuthGap = degreesToRadians(options.maxAzimuthGapDeg);
 
   let outputCount = 0;
   let rejectedTriangles = 0;
   let ringCount = 0;
   let ringPairCount = 0;
 
-  const appendQuad = (
-    lower0: number,
-    upper0: number,
-    lower1: number,
-    upper1: number,
-    ringGap: number,
-    angularGap: number
-  ): boolean => {
+  const appendQuad = (candidate: QuadCandidate): boolean => {
     if (outputCount + 6 > output.length) return false;
-    if (
-      !isQuadValid(
-        lower0,
-        upper0,
-        lower1,
-        upper1,
-        ringGap,
-        angularGap,
-        cloud.positions,
-        ranges,
-        options
-      )
-    ) {
-      rejectedTriangles += 2;
-      return true;
-    }
-
-    // The split is fixed so tiny frame-to-frame range noise cannot flip the
-    // diagonal and make the surface shimmer.
-    output[outputCount] = lower0;
-    output[outputCount + 1] = upper0;
-    output[outputCount + 2] = lower1;
-    output[outputCount + 3] = lower1;
-    output[outputCount + 4] = upper0;
-    output[outputCount + 5] = upper1;
+    output[outputCount] = candidate.lower0;
+    output[outputCount + 1] = candidate.upper0;
+    output[outputCount + 2] = candidate.lower1;
+    output[outputCount + 3] = candidate.lower1;
+    output[outputCount + 4] = candidate.upper0;
+    output[outputCount + 5] = candidate.upper1;
     outputCount += 6;
     return outputCount < output.length;
   };
@@ -169,17 +176,45 @@ export function buildStableScanMesh(
       .sort((left, right) => left.ring - right.ring);
     ringCount += sequences.length;
 
-    const byRing = new Map<number, RingSequence>();
-    for (const sequence of sequences) byRing.set(sequence.ring, sequence);
-
-    // Primary surface: adjacent physical beams.
     for (let sequenceIndex = 0; sequenceIndex + 1 < sequences.length; sequenceIndex += 1) {
       const lower = sequences[sequenceIndex];
       const upper = sequences[sequenceIndex + 1];
+
+      // Only neighboring physical beams are connected. The former ring+2
+      // fallback created very large polygons across locally missing returns.
       if (upper.ring - lower.ring !== 1) continue;
 
-      const beforePair = outputCount;
+      const representativeStep = robustMaximumStep(lower.medianStep, upper.medianStep);
+      const matchTolerance = clamp(
+        representativeStep * options.matchToleranceFactor,
+        degreesToRadians(options.minMatchToleranceDeg),
+        degreesToRadians(options.maxMatchToleranceDeg)
+      );
+      const maximumAzimuthGap = clamp(
+        representativeStep * options.azimuthGapFactor,
+        degreesToRadians(options.minAzimuthGapDeg),
+        degreesToRadians(options.maxAzimuthGapDeg)
+      );
       const matches = matchRingSequences(lower, upper, cloud.azimuths, matchTolerance);
+      if (matches.length < options.minRunQuads + 1) continue;
+
+      let run: QuadCandidate[] = [];
+      let pairAccepted = false;
+
+      const flushRun = (): boolean => {
+        if (run.length < options.minRunQuads) {
+          rejectedTriangles += run.length * 2;
+          run = [];
+          return true;
+        }
+        for (const candidate of run) {
+          if (!appendQuad(candidate)) return false;
+        }
+        pairAccepted = true;
+        run = [];
+        return true;
+      };
+
       for (let matchIndex = 1; matchIndex < matches.length; matchIndex += 1) {
         const previous = matches[matchIndex - 1];
         const current = matches[matchIndex];
@@ -192,83 +227,62 @@ export function buildStableScanMesh(
           cloud.azimuths[current.upperPoint]
         );
         const angularGap = Math.max(lowerGap, upperGap);
+
         if (
           !Number.isFinite(angularGap) ||
           angularGap <= 0 ||
           angularGap > maximumAzimuthGap
         ) {
+          if (!flushRun()) break outer;
           continue;
         }
+
+        const evaluation = evaluateQuad(
+          previous.lowerPoint,
+          previous.upperPoint,
+          current.lowerPoint,
+          current.upperPoint,
+          angularGap,
+          cloud.positions,
+          ranges,
+          options
+        );
+        if (!evaluation.valid) {
+          rejectedTriangles += 2;
+          if (!flushRun()) break outer;
+          continue;
+        }
+
+        const candidate: QuadCandidate = {
+          lower0: previous.lowerPoint,
+          upper0: previous.upperPoint,
+          lower1: current.lowerPoint,
+          upper1: current.upperPoint,
+          normalX: evaluation.normalX,
+          normalY: evaluation.normalY,
+          normalZ: evaluation.normalZ
+        };
+
+        const previousCandidate = run[run.length - 1];
         if (
-          !appendQuad(
-            previous.lowerPoint,
-            previous.upperPoint,
-            current.lowerPoint,
-            current.upperPoint,
-            1,
-            angularGap
+          previousCandidate &&
+          !normalsAgree(
+            previousCandidate.normalX,
+            previousCandidate.normalY,
+            previousCandidate.normalZ,
+            candidate.normalX,
+            candidate.normalY,
+            candidate.normalZ,
+            options.maxRunNormalAngleDeg
           )
         ) {
-          break outer;
+          if (!flushRun()) break outer;
         }
+        run.push(candidate);
       }
-      if (outputCount > beforePair) ringPairCount += 1;
-    }
 
-    // Local fallback: bridge exactly one missing physical beam only where the
-    // middle ring has no return near either end of the candidate quad.
-    if (options.maxRingGap >= 2) {
-      for (const lower of sequences) {
-        const middle = byRing.get(lower.ring + 1);
-        const upper = byRing.get(lower.ring + 2);
-        if (!upper) continue;
-
-        const beforePair = outputCount;
-        const matches = matchRingSequences(lower, upper, cloud.azimuths, matchTolerance);
-        for (let matchIndex = 1; matchIndex < matches.length; matchIndex += 1) {
-          const previous = matches[matchIndex - 1];
-          const current = matches[matchIndex];
-          const previousAngle = previous.angle;
-          const currentAngle = current.angle;
-          if (
-            middle &&
-            hasPointNear(middle, previousAngle, cloud.azimuths, matchTolerance) &&
-            hasPointNear(middle, currentAngle, cloud.azimuths, matchTolerance)
-          ) {
-            continue;
-          }
-
-          const lowerGap = positiveAngleDelta(
-            cloud.azimuths[previous.lowerPoint],
-            cloud.azimuths[current.lowerPoint]
-          );
-          const upperGap = positiveAngleDelta(
-            cloud.azimuths[previous.upperPoint],
-            cloud.azimuths[current.upperPoint]
-          );
-          const angularGap = Math.max(lowerGap, upperGap);
-          if (
-            !Number.isFinite(angularGap) ||
-            angularGap <= 0 ||
-            angularGap > maximumAzimuthGap * 0.75
-          ) {
-            continue;
-          }
-          if (
-            !appendQuad(
-              previous.lowerPoint,
-              previous.upperPoint,
-              current.lowerPoint,
-              current.upperPoint,
-              2,
-              angularGap
-            )
-          ) {
-            break outer;
-          }
-        }
-        if (outputCount > beforePair) ringPairCount += 1;
-      }
+      if (!flushRun()) break outer;
+      if (pairAccepted) ringPairCount += 1;
     }
   }
 
@@ -319,21 +333,22 @@ function prepareRingSequence(
   sourceIndices: number[],
   cloud: ParsedCloud
 ): RingSequence {
-  const indices = sourceIndices
+  const sorted = sourceIndices
     .filter((pointIndex) => Number.isFinite(cloud.azimuths[pointIndex]))
     .sort((left, right) => {
-      const delta = normalizeAngle(cloud.azimuths[left]) - normalizeAngle(cloud.azimuths[right]);
+      const delta =
+        normalizeAngle(cloud.azimuths[left]) - normalizeAngle(cloud.azimuths[right]);
       return delta === 0 ? left - right : delta;
     });
 
-  // Dual returns or a dense source may place several points at effectively the
-  // same azimuth. Keep the nearer return so one scan column has one vertex.
-  const deduplicated: number[] = [];
+  // One range-image column may contain duplicate or dual returns. Keep the
+  // nearer return, otherwise duplicate angles create zero-width quads.
+  const indices: number[] = [];
   const minimumSeparation = 1e-5;
-  for (const pointIndex of indices) {
-    const previousIndex = deduplicated[deduplicated.length - 1];
+  for (const pointIndex of sorted) {
+    const previousIndex = indices[indices.length - 1];
     if (previousIndex === undefined) {
-      deduplicated.push(pointIndex);
+      indices.push(pointIndex);
       continue;
     }
     const angleDelta = Math.abs(
@@ -341,17 +356,36 @@ function prepareRingSequence(
         normalizeAngle(cloud.azimuths[previousIndex])
     );
     if (angleDelta > minimumSeparation) {
-      deduplicated.push(pointIndex);
+      indices.push(pointIndex);
       continue;
     }
-
-    const currentRange = usableRange(cloud, pointIndex);
-    const previousRange = usableRange(cloud, previousIndex);
-    if (currentRange < previousRange) {
-      deduplicated[deduplicated.length - 1] = pointIndex;
+    if (usableRange(cloud, pointIndex) < usableRange(cloud, previousIndex)) {
+      indices[indices.length - 1] = pointIndex;
     }
   }
-  return { ring, indices: deduplicated };
+
+  return {
+    ring,
+    indices,
+    medianStep: estimateMedianStep(indices, cloud.azimuths)
+  };
+}
+
+function estimateMedianStep(indices: number[], azimuths: Float32Array): number {
+  const deltas: number[] = [];
+  const maximumSampleGap = degreesToRadians(2.0);
+  for (let order = 1; order < indices.length; order += 1) {
+    const delta = positiveAngleDelta(
+      azimuths[indices[order - 1]],
+      azimuths[indices[order]]
+    );
+    if (Number.isFinite(delta) && delta > 1e-6 && delta <= maximumSampleGap) {
+      deltas.push(delta);
+    }
+  }
+  if (deltas.length === 0) return degreesToRadians(0.20);
+  deltas.sort((left, right) => left - right);
+  return deltas[Math.floor(deltas.length / 2)];
 }
 
 function matchRingSequences(
@@ -360,126 +394,91 @@ function matchRingSequences(
   azimuths: Float32Array,
   tolerance: number
 ): RingMatch[] {
-  if (lower.indices.length === 0 || upper.indices.length === 0) return [];
-
-  const primaryIsLower = lower.indices.length <= upper.indices.length;
-  const primary = primaryIsLower ? lower.indices : upper.indices;
-  const secondary = primaryIsLower ? upper.indices : lower.indices;
   const matches: RingMatch[] = [];
-  let secondaryOrder = 0;
-  let lastSecondaryOrder = -1;
+  let lowerOrder = 0;
+  let upperOrder = 0;
 
-  for (let primaryOrder = 0; primaryOrder < primary.length; primaryOrder += 1) {
-    const primaryPoint = primary[primaryOrder];
-    const primaryAngle = normalizeAngle(azimuths[primaryPoint]);
-    if (!Number.isFinite(primaryAngle)) continue;
-
-    secondaryOrder = Math.max(secondaryOrder, lastSecondaryOrder + 1);
-    if (secondaryOrder >= secondary.length) break;
-
-    while (secondaryOrder + 1 < secondary.length) {
-      const currentAngle = normalizeAngle(azimuths[secondary[secondaryOrder]]);
-      const nextAngle = normalizeAngle(azimuths[secondary[secondaryOrder + 1]]);
-      if (Math.abs(nextAngle - primaryAngle) <= Math.abs(currentAngle - primaryAngle)) {
-        secondaryOrder += 1;
-      } else {
-        break;
-      }
+  while (lowerOrder < lower.indices.length && upperOrder < upper.indices.length) {
+    const lowerPoint = lower.indices[lowerOrder];
+    const upperPoint = upper.indices[upperOrder];
+    const lowerAngle = normalizeAngle(azimuths[lowerPoint]);
+    const upperAngle = normalizeAngle(azimuths[upperPoint]);
+    if (!Number.isFinite(lowerAngle)) {
+      lowerOrder += 1;
+      continue;
+    }
+    if (!Number.isFinite(upperAngle)) {
+      upperOrder += 1;
+      continue;
     }
 
-    const secondaryPoint = secondary[secondaryOrder];
-    const secondaryAngle = normalizeAngle(azimuths[secondaryPoint]);
-    if (!Number.isFinite(secondaryAngle)) continue;
-    if (Math.abs(secondaryAngle - primaryAngle) > tolerance) continue;
+    const difference = lowerAngle - upperAngle;
+    if (Math.abs(difference) <= tolerance) {
+      // Compare one-step alternatives before committing the one-to-one match.
+      const nextLowerDifference =
+        lowerOrder + 1 < lower.indices.length
+          ? Math.abs(
+              normalizeAngle(azimuths[lower.indices[lowerOrder + 1]]) - upperAngle
+            )
+          : Number.POSITIVE_INFINITY;
+      const nextUpperDifference =
+        upperOrder + 1 < upper.indices.length
+          ? Math.abs(
+              lowerAngle -
+                normalizeAngle(azimuths[upper.indices[upperOrder + 1]])
+            )
+          : Number.POSITIVE_INFINITY;
 
-    const lowerPoint = primaryIsLower ? primaryPoint : secondaryPoint;
-    const upperPoint = primaryIsLower ? secondaryPoint : primaryPoint;
-    const lowerOrder = primaryIsLower ? primaryOrder : secondaryOrder;
-    const upperOrder = primaryIsLower ? secondaryOrder : primaryOrder;
-    matches.push({
-      lowerPoint,
-      upperPoint,
-      lowerOrder,
-      upperOrder,
-      angle: (primaryAngle + secondaryAngle) * 0.5
-    });
-    lastSecondaryOrder = secondaryOrder;
+      if (nextLowerDifference + 1e-9 < Math.abs(difference)) {
+        lowerOrder += 1;
+        continue;
+      }
+      if (nextUpperDifference + 1e-9 < Math.abs(difference)) {
+        upperOrder += 1;
+        continue;
+      }
+
+      matches.push({
+        lowerPoint,
+        upperPoint,
+        angle: (lowerAngle + upperAngle) * 0.5
+      });
+      lowerOrder += 1;
+      upperOrder += 1;
+    } else if (difference < 0) {
+      lowerOrder += 1;
+    } else {
+      upperOrder += 1;
+    }
   }
 
-  matches.sort((left, right) => left.angle - right.angle);
   return matches;
 }
 
-function hasPointNear(
-  sequence: RingSequence,
-  targetAngle: number,
-  azimuths: Float32Array,
-  tolerance: number
-): boolean {
-  let low = 0;
-  let high = sequence.indices.length;
-  while (low < high) {
-    const middle = Math.floor((low + high) / 2);
-    const angle = normalizeAngle(azimuths[sequence.indices[middle]]);
-    if (angle < targetAngle) low = middle + 1;
-    else high = middle;
-  }
-
-  for (const order of [low - 1, low, low + 1]) {
-    if (order < 0 || order >= sequence.indices.length) continue;
-    const angle = normalizeAngle(azimuths[sequence.indices[order]]);
-    if (Math.abs(angle - targetAngle) <= tolerance) return true;
-  }
-  return false;
-}
-
-function buildRanges(cloud: ParsedCloud): Float32Array {
-  if (cloud.hasRange) return cloud.ranges;
-  const ranges = new Float32Array(cloud.pointCount);
-  for (let pointIndex = 0; pointIndex < cloud.pointCount; pointIndex += 1) {
-    const offset = pointIndex * 3;
-    ranges[pointIndex] = Math.hypot(
-      cloud.positions[offset],
-      cloud.positions[offset + 1],
-      cloud.positions[offset + 2]
-    );
-  }
-  return ranges;
-}
-
-function usableRange(cloud: ParsedCloud, pointIndex: number): number {
-  const supplied = cloud.hasRange ? cloud.ranges[pointIndex] : Number.NaN;
-  if (Number.isFinite(supplied) && supplied > 0) return supplied;
-  const offset = pointIndex * 3;
-  return Math.hypot(
-    cloud.positions[offset],
-    cloud.positions[offset + 1],
-    cloud.positions[offset + 2]
-  );
-}
-
-function isQuadValid(
+function evaluateQuad(
   lower0: number,
   upper0: number,
   lower1: number,
   upper1: number,
-  ringGap: number,
   angularGap: number,
   positions: Float32Array,
   ranges: Float32Array,
   options: StableScanMeshBuildOptions
-): boolean {
-  const unique = new Set([lower0, upper0, lower1, upper1]);
-  if (unique.size !== 4) return false;
+): QuadEvaluation {
+  if (new Set([lower0, upper0, lower1, upper1]).size !== 4) {
+    return invalidQuad();
+  }
 
-  const alongLower = distance(lower0, lower1, positions);
-  const alongUpper = distance(upper0, upper1, positions);
-  const crossStart = distance(lower0, upper0, positions);
-  const crossEnd = distance(lower1, upper1, positions);
-  const diagonalA = distance(lower0, upper1, positions);
-  const diagonalB = distance(upper0, lower1, positions);
-  const allEdges = [alongLower, alongUpper, crossStart, crossEnd, diagonalA, diagonalB];
-  if (allEdges.some((edge) => !Number.isFinite(edge) || edge <= 1e-6)) return false;
+  const alongLower = vectorBetween(lower0, lower1, positions);
+  const alongUpper = vectorBetween(upper0, upper1, positions);
+  const crossStart = vectorBetween(lower0, upper0, positions);
+  const crossEnd = vectorBetween(lower1, upper1, positions);
+  const diagonalA = vectorBetween(lower0, upper1, positions);
+  const diagonalB = vectorBetween(upper0, lower1, positions);
+  const vectors = [alongLower, alongUpper, crossStart, crossEnd, diagonalA, diagonalB];
+  if (vectors.some((vector) => !vector.valid || vector.length <= 1e-6)) {
+    return invalidQuad();
+  }
 
   const minimumRange = Math.max(
     0.01,
@@ -491,25 +490,23 @@ function isQuadValid(
     ranges[lower1],
     ranges[upper1]
   );
-  if (!Number.isFinite(minimumRange) || !Number.isFinite(maximumRange)) return false;
+  if (!Number.isFinite(minimumRange) || !Number.isFinite(maximumRange)) {
+    return invalidQuad();
+  }
 
   const allowedAlongEdge = Math.min(
     options.maxAlongEdgeM,
     options.baseAlongEdgeM + maximumRange * angularGap * options.angularEdgeScale
   );
-  if (Math.max(alongLower, alongUpper) > allowedAlongEdge) return false;
-
-  const allowedCrossEdge = Math.min(
-    options.maxCrossEdgeM,
-    options.baseCrossEdgeM + minimumRange * options.crossEdgePerRange * ringGap
-  );
-  if (Math.max(crossStart, crossEnd) > allowedCrossEdge) return false;
-
-  const allowedDiagonal = Math.min(
-    options.maxDiagonalEdgeM,
-    Math.hypot(allowedAlongEdge, allowedCrossEdge) * 1.35
-  );
-  if (Math.max(diagonalA, diagonalB) > allowedDiagonal) return false;
+  if (Math.max(alongLower.length, alongUpper.length) > allowedAlongEdge) {
+    return invalidQuad();
+  }
+  if (Math.max(crossStart.length, crossEnd.length) > options.maxCrossEdgeM) {
+    return invalidQuad();
+  }
+  if (Math.max(diagonalA.length, diagonalB.length) > options.maxDiagonalEdgeM) {
+    return invalidQuad();
+  }
 
   const allowedAlongRangeJump = Math.min(
     options.maxAlongRangeJumpM,
@@ -519,42 +516,51 @@ function isQuadValid(
     Math.abs(ranges[lower1] - ranges[lower0]) > allowedAlongRangeJump ||
     Math.abs(ranges[upper1] - ranges[upper0]) > allowedAlongRangeJump
   ) {
-    return false;
+    return invalidQuad();
   }
 
-  const allowedCrossRangeJump = Math.min(
-    options.maxCrossRangeJumpM,
-    options.baseCrossRangeJumpM + minimumRange * options.crossRangeJumpRatio * ringGap
-  );
   if (
-    Math.abs(ranges[upper0] - ranges[lower0]) > allowedCrossRangeJump ||
-    Math.abs(ranges[upper1] - ranges[lower1]) > allowedCrossRangeJump
+    !vectorsAgree(alongLower, alongUpper, options.maxOppositeEdgeAngleDeg) ||
+    !vectorsAgree(crossStart, crossEnd, options.maxOppositeEdgeAngleDeg)
   ) {
-    return false;
+    return invalidQuad();
+  }
+  if (
+    edgeLengthRatio(alongLower.length, alongUpper.length) >
+      options.maxOppositeEdgeLengthRatio ||
+    edgeLengthRatio(crossStart.length, crossEnd.length) >
+      options.maxOppositeEdgeLengthRatio
+  ) {
+    return invalidQuad();
   }
 
   const first = triangleMetrics(lower0, upper0, lower1, positions);
   const second = triangleMetrics(lower1, upper0, upper1, positions);
-  if (!first.valid || !second.valid) return false;
+  if (!first.valid || !second.valid) return invalidQuad();
   if (first.area < options.minTriangleAreaM2 || second.area < options.minTriangleAreaM2) {
-    return false;
+    return invalidQuad();
   }
   if (first.edgeRatio > options.maxEdgeRatio || second.edgeRatio > options.maxEdgeRatio) {
-    return false;
+    return invalidQuad();
+  }
+  if (
+    !normalsAgree(
+      first.normalX,
+      first.normalY,
+      first.normalZ,
+      second.normalX,
+      second.normalY,
+      second.normalZ,
+      options.maxTriangleNormalAngleDeg
+    )
+  ) {
+    return invalidQuad();
   }
 
-  const normalDot = Math.abs(
-    first.normalX * second.normalX +
-      first.normalY * second.normalY +
-      first.normalZ * second.normalZ
-  );
-  const minimumNormalDot = Math.cos(degreesToRadians(options.maxNormalAngleDeg));
-  if (normalDot < minimumNormalDot) return false;
-
-  const maximumEdge = Math.max(...allEdges);
+  const maximumEdge = Math.max(...vectors.map((vector) => vector.length));
   const allowedPlanarityError =
     options.maxPlanarityErrorM + maximumEdge * options.planarityErrorRatio;
-  const fourthPointDistance = pointPlaneDistance(
+  const firstPlaneError = pointPlaneDistance(
     upper1,
     lower0,
     first.normalX,
@@ -562,16 +568,92 @@ function isQuadValid(
     first.normalZ,
     positions
   );
-  return Number.isFinite(fourthPointDistance) && fourthPointDistance <= allowedPlanarityError;
+  const secondPlaneError = pointPlaneDistance(
+    lower0,
+    lower1,
+    second.normalX,
+    second.normalY,
+    second.normalZ,
+    positions
+  );
+  if (
+    !Number.isFinite(firstPlaneError) ||
+    !Number.isFinite(secondPlaneError) ||
+    Math.max(firstPlaneError, secondPlaneError) > allowedPlanarityError
+  ) {
+    return invalidQuad();
+  }
+
+  let secondNormalX = second.normalX;
+  let secondNormalY = second.normalY;
+  let secondNormalZ = second.normalZ;
+  const normalDot =
+    first.normalX * secondNormalX +
+    first.normalY * secondNormalY +
+    first.normalZ * secondNormalZ;
+  if (normalDot < 0) {
+    secondNormalX = -secondNormalX;
+    secondNormalY = -secondNormalY;
+    secondNormalZ = -secondNormalZ;
+  }
+
+  const normalX = first.normalX + secondNormalX;
+  const normalY = first.normalY + secondNormalY;
+  const normalZ = first.normalZ + secondNormalZ;
+  const normalLength = Math.hypot(normalX, normalY, normalZ);
+  if (!Number.isFinite(normalLength) || normalLength <= 1e-9) return invalidQuad();
+
+  return {
+    valid: true,
+    normalX: normalX / normalLength,
+    normalY: normalY / normalLength,
+    normalZ: normalZ / normalLength
+  };
 }
 
-interface TriangleMetrics {
+interface VectorMetrics {
   valid: boolean;
-  area: number;
-  edgeRatio: number;
-  normalX: number;
-  normalY: number;
-  normalZ: number;
+  x: number;
+  y: number;
+  z: number;
+  length: number;
+}
+
+function vectorBetween(
+  from: number,
+  to: number,
+  positions: Float32Array
+): VectorMetrics {
+  const fromOffset = from * 3;
+  const toOffset = to * 3;
+  const x = positions[toOffset] - positions[fromOffset];
+  const y = positions[toOffset + 1] - positions[fromOffset + 1];
+  const z = positions[toOffset + 2] - positions[fromOffset + 2];
+  const length = Math.hypot(x, y, z);
+  return {
+    valid: Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) && Number.isFinite(length),
+    x,
+    y,
+    z,
+    length
+  };
+}
+
+function vectorsAgree(
+  first: VectorMetrics,
+  second: VectorMetrics,
+  maximumAngleDeg: number
+): boolean {
+  if (first.length <= 1e-9 || second.length <= 1e-9) return false;
+  const dot =
+    (first.x * second.x + first.y * second.y + first.z * second.z) /
+    (first.length * second.length);
+  return Number.isFinite(dot) && dot >= Math.cos(degreesToRadians(maximumAngleDeg));
+}
+
+function edgeLengthRatio(first: number, second: number): number {
+  const minimum = Math.max(1e-6, Math.min(first, second));
+  return Math.max(first, second) / minimum;
 }
 
 function triangleMetrics(
@@ -606,7 +688,7 @@ function triangleMetrics(
 
   const ab = Math.hypot(abX, abY, abZ);
   const ac = Math.hypot(acX, acY, acZ);
-  const bc = distance(b, c, positions);
+  const bc = vectorBetween(b, c, positions).length;
   const minimumEdge = Math.max(1e-6, Math.min(ab, ac, bc));
   const maximumEdge = Math.max(ab, ac, bc);
   return {
@@ -617,6 +699,19 @@ function triangleMetrics(
     normalY: crossY / doubledArea,
     normalZ: crossZ / doubledArea
   };
+}
+
+function normalsAgree(
+  firstX: number,
+  firstY: number,
+  firstZ: number,
+  secondX: number,
+  secondY: number,
+  secondZ: number,
+  maximumAngleDeg: number
+): boolean {
+  const dot = Math.abs(firstX * secondX + firstY * secondY + firstZ * secondZ);
+  return Number.isFinite(dot) && dot >= Math.cos(degreesToRadians(maximumAngleDeg));
 }
 
 function pointPlaneDistance(
@@ -635,14 +730,31 @@ function pointPlaneDistance(
   return Math.abs(dx * normalX + dy * normalY + dz * normalZ);
 }
 
-function distance(a: number, b: number, positions: Float32Array): number {
-  const aOffset = a * 3;
-  const bOffset = b * 3;
+function buildRanges(cloud: ParsedCloud): Float32Array {
+  if (cloud.hasRange) return cloud.ranges;
+  const ranges = new Float32Array(cloud.pointCount);
+  for (let pointIndex = 0; pointIndex < cloud.pointCount; pointIndex += 1) {
+    ranges[pointIndex] = usableRange(cloud, pointIndex);
+  }
+  return ranges;
+}
+
+function usableRange(cloud: ParsedCloud, pointIndex: number): number {
+  const supplied = cloud.hasRange ? cloud.ranges[pointIndex] : Number.NaN;
+  if (Number.isFinite(supplied) && supplied > 0) return supplied;
+  const offset = pointIndex * 3;
   return Math.hypot(
-    positions[aOffset] - positions[bOffset],
-    positions[aOffset + 1] - positions[bOffset + 1],
-    positions[aOffset + 2] - positions[bOffset + 2]
+    cloud.positions[offset],
+    cloud.positions[offset + 1],
+    cloud.positions[offset + 2]
   );
+}
+
+function robustMaximumStep(first: number, second: number): number {
+  const fallback = degreesToRadians(0.20);
+  const finiteFirst = Number.isFinite(first) && first > 0 ? first : fallback;
+  const finiteSecond = Number.isFinite(second) && second > 0 ? second : fallback;
+  return Math.max(finiteFirst, finiteSecond);
 }
 
 function normalizeAngle(angle: number): number {
@@ -661,8 +773,16 @@ function positiveAngleDelta(from: number, to: number): number {
   return delta >= 0 ? delta : delta + TWO_PI;
 }
 
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
 function degreesToRadians(degrees: number): number {
   return (degrees * Math.PI) / 180;
+}
+
+function invalidQuad(): QuadEvaluation {
+  return { valid: false, normalX: 0, normalY: 0, normalZ: 0 };
 }
 
 function emptyResult(reason: Exclude<ScanMeshBuildReason, 'ok'>): ScanMeshBuildResult {
