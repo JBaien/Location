@@ -19,6 +19,8 @@ export interface ScanMeshDebug {
   has_lidar_id: boolean;
   has_ring: boolean;
   has_time: boolean;
+  has_azimuth: boolean;
+  has_range: boolean;
   held_frame_count: number;
   frame_state: string;
   last_packet_stamp: string;
@@ -34,8 +36,6 @@ export class ScanMeshLayer {
     transparent: true,
     opacity: 0.60,
     depthTest: true,
-    // Writing depth prevents two overlapping lidar surfaces from changing
-    // blend order every time the triangle index order changes.
     depthWrite: true,
     polygonOffset: true,
     polygonOffsetFactor: 1,
@@ -99,8 +99,6 @@ export class ScanMeshLayer {
       hasDisplayedMesh && now - this.lastAppliedAtMs < this.maxHoldDurationMs;
 
     if (candidateCollapsed && canHoldPrevious) {
-      // A partially received or heavily filtered scan must not clear the screen.
-      // Keep the last complete mesh for a short bounded period instead.
       this.heldFrameCount += 1;
       this.frameState = `held_low_coverage:${candidate.triangleCount}`;
       this.setVisible(layerVisible);
@@ -158,6 +156,8 @@ export class ScanMeshLayer {
       has_lidar_id: packetCloud?.hasLidarId ?? false,
       has_ring: packetCloud?.hasRing ?? false,
       has_time: packetCloud?.hasTime ?? false,
+      has_azimuth: packetCloud?.hasAzimuth ?? false,
+      has_range: packetCloud?.hasRange ?? false,
       held_frame_count: this.heldFrameCount,
       frame_state: this.frameState,
       last_packet_stamp: packetCloud?.stampNs.toString() ?? '0',
@@ -200,7 +200,6 @@ export class ScanMeshLayer {
     if (this.geometry.index) this.geometry.index.needsUpdate = true;
     this.mesh.frustumCulled = false;
 
-    // Replace the geometry atomically, then release the previous GPU buffers.
     previousGeometry.dispose();
   }
 }
