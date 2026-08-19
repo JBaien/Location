@@ -338,19 +338,34 @@ bool MultiLidarFusion::transformCloudToOutputFrame(
         config_.normalize_point_time
             ? static_cast<float>((cloud->header.stamp - output_stamp).toSec())
             : 0.0f;
+    constexpr float kTwoPi = 6.28318530717958647692f;
 
     for (size_t i = 0; i < input_cloud.points.size(); ++i) {
         const auto& src = input_cloud.points[i];
         auto& dst = transformed_cloud.points[i];
+
+        // Retain source-sensor polar coordinates before applying TF. Once XYZ
+        // is in base_link, atan2(x,y) no longer represents the scan column for
+        // an offset/rotated lidar. Source azimuth is therefore the only stable
+        // key for joining adjacent rings in the browser.
+        float source_azimuth = std::atan2(src.y, src.x);
+        if (source_azimuth < 0.0f) {
+            source_azimuth += kTwoPi;
+        }
+        const float source_range =
+            std::sqrt(src.x * src.x + src.y * src.y + src.z * src.z);
+
         const Eigen::Vector3f p(src.x, src.y, src.z);
         const Eigen::Vector3f q = transform_eigen.cast<float>() * p;
         dst.x = q.x();
         dst.y = q.y();
         dst.z = q.z();
         dst.intensity = src.intensity;
+        dst.time = src.time + time_offset;
+        dst.azimuth = std::isfinite(source_azimuth) ? source_azimuth : 0.0f;
+        dst.range = std::isfinite(source_range) ? source_range : 0.0f;
         dst.ring = src.ring;
         dst.lidar_id = lidar_id;
-        dst.time = src.time + time_offset;
     }
 
     return true;
