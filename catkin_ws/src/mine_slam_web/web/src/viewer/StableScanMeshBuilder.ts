@@ -1,7 +1,10 @@
 import type { ParsedCloud } from './CloudTypes';
 
 export interface StableScanMeshBuildOptions {
-  columnsPerScan: number;
+  minColumnsPerScan: number;
+  maxColumnsPerScan: number;
+  targetCellFillRatio: number;
+  maxColumnBridge: number;
   maxTriangles: number;
   maxRingGap: number;
   minPointsPerRing: number;
@@ -15,7 +18,6 @@ export interface StableScanMeshBuildOptions {
   rangeJumpRatio: number;
   maxEdgeRatio: number;
   minTriangleAreaM2: number;
-  allowPartialCells: boolean;
 }
 
 export interface ScanMeshBuildResult {
@@ -29,30 +31,30 @@ export interface ScanMeshBuildResult {
 }
 
 export const DEFAULT_STABLE_SCAN_MESH_OPTIONS: StableScanMeshBuildOptions = {
-  // A fixed angular grid makes the topology deterministic between frames.
-  // The previous nearest-time pairing could select a different diagonal or
-  // neighbour whenever a few returns disappeared, which caused visible jumps.
-  columnsPerScan: 720,
+  // Spatial voxel filtering removes many more samples from close floor/roof
+  // returns than from distant walls. Choose the angular grid from the lower
+  // quartile ring density instead of forcing every frame into 720 columns.
+  minColumnsPerScan: 180,
+  maxColumnsPerScan: 480,
+  targetCellFillRatio: 0.74,
+  // Bridge only short angular gaps. At 360 columns this is at most 4 degrees.
+  maxColumnBridge: 4,
   maxTriangles: 300000,
-  maxRingGap: 1,
+  // A missing beam may be bridged by the next physical ring when geometry is
+  // continuous. Normal adjacent-ring quads remain preferred.
+  maxRingGap: 2,
   minPointsPerRing: 24,
   minFiniteTimeRatio: 0.65,
   minTimeSpan: 1e-5,
 
-  // Floor and roof returns are often observed at a grazing angle, so their
-  // adjacent samples are farther apart than wall samples. The fixed scan grid
-  // lets these limits be relaxed without connecting across missing azimuths.
-  maxEdgeLengthM: 1.6,
-  baseEdgeLengthM: 0.24,
-  edgeLengthPerRange: 0.12,
-  maxRangeJumpM: 1.4,
-  baseRangeJumpM: 0.30,
-  rangeJumpRatio: 0.18,
-
-  // Reject the long, needle-like fans that appeared near occlusion edges.
-  maxEdgeRatio: 8.0,
-  minTriangleAreaM2: 0.00002,
-  allowPartialCells: true
+  maxEdgeLengthM: 1.2,
+  baseEdgeLengthM: 0.22,
+  edgeLengthPerRange: 0.10,
+  maxRangeJumpM: 1.0,
+  baseRangeJumpM: 0.26,
+  rangeJumpRatio: 0.15,
+  maxEdgeRatio: 6.0,
+  minTriangleAreaM2: 0.00002
 };
 
 interface SensorBuckets {
@@ -89,65 +91,67 @@ export function buildStableScanMesh(
   let ringCount = 0;
   let ringPairCount = 0;
 
-  const appendTriangle = (a: number, b: number, c: number): boolean => {
-    if (outputCount + 3 > output.length) return false;
-    if (!isTriangleValid(a, b, c, cloud.positions, ranges, options)) {
-      rejectedTriangles += 1;
+  const appendQuad = (a0: number, b0: number, a1: number, b1: number): boolean => {
+    if (outputCount + 6 > output.length) return false;
+    const firstValid = isTriangleValid(a0, b0, a1, cloud.positions, ranges, options);
+    const secondValid = isTriangleValid(a1, b0, b1, cloud.positions, ranges, options);
+    // Quads are atomic. Keeping only one half was the source of the isolated
+    // fins/hourglass shapes seen in the real tunnel recording.
+    if (!firstValid || !secondValid) {
+      rejectedTriangles += 2;
       return true;
     }
-    output[outputCount] = a;
-    output[outputCount + 1] = b;
-    output[outputCount + 2] = c;
-    outputCount += 3;
+    output[outputCount] = a0;
+    output[outputCount + 1] = b0;
+    output[outputCount + 2] = a1;
+    output[outputCount + 3] = a1;
+    output[outputCount + 4] = b0;
+    output[outputCount + 5] = b1;
+    outputCount += 6;
     return outputCount < output.length;
   };
 
   outer: for (const buckets of sensorBuckets.values()) {
     const timeDomain = estimateTimeDomain(buckets.pointIndices, cloud, options);
+    const columnCount = chooseColumnCount(buckets.rings, options);
     const ringGrids = Array.from(buckets.rings.entries())
       .map(([ring, indices]) =>
-        buildRingGrid(ring, indices, cloud, ranges, timeDomain, options)
+        buildRingGrid(ring, indices, cloud, ranges, timeDomain, columnCount, options)
       )
       .filter((grid) => grid.validCellCount >= 2)
       .sort((left, right) => left.ring - right.ring);
 
     ringCount += ringGrids.length;
-    for (let pairIndex = 0; pairIndex + 1 < ringGrids.length; pairIndex += 1) {
-      const lower = ringGrids[pairIndex];
-      const upper = ringGrids[pairIndex + 1];
-      if (upper.ring - lower.ring > options.maxRingGap) continue;
 
+    // First build the normal adjacent-ring surface.
+    for (let lowerIndex = 0; lowerIndex + 1 < ringGrids.length; lowerIndex += 1) {
+      const lower = ringGrids[lowerIndex];
+      const upper = ringGrids[lowerIndex + 1];
+      if (upper.ring - lower.ring !== 1) continue;
       const beforePair = outputCount;
-      const columns = Math.min(lower.cells.length, upper.cells.length);
-      for (let column = 0; column + 1 < columns; column += 1) {
-        const a0 = lower.cells[column];
-        const a1 = lower.cells[column + 1];
-        const b0 = upper.cells[column];
-        const b1 = upper.cells[column + 1];
-
-        const validCount =
-          Number(a0 >= 0) + Number(a1 >= 0) + Number(b0 >= 0) + Number(b1 >= 0);
-
-        if (validCount === 4) {
-          // Keep the diagonal deterministic. Choosing the shorter diagonal on
-          // every frame makes topology flip when noisy points move slightly.
-          if (!appendTriangle(a0, b0, a1)) break outer;
-          if (!appendTriangle(a1, b0, b1)) break outer;
-          continue;
-        }
-
-        if (!options.allowPartialCells || validCount !== 3) continue;
-        if (a0 < 0) {
-          if (!appendTriangle(a1, b0, b1)) break outer;
-        } else if (a1 < 0) {
-          if (!appendTriangle(a0, b0, b1)) break outer;
-        } else if (b0 < 0) {
-          if (!appendTriangle(a0, b1, a1)) break outer;
-        } else {
-          if (!appendTriangle(a0, b0, a1)) break outer;
-        }
+      if (!connectRingPair(lower, upper, null, options.maxColumnBridge, appendQuad)) {
+        break outer;
       }
       if (outputCount > beforePair) ringPairCount += 1;
+    }
+
+    // Then fill a missing physical beam only where the intermediate ring does
+    // not already provide a complete local quad. Geometry checks still gate
+    // every fallback quad.
+    if (options.maxRingGap >= 2) {
+      for (let lowerIndex = 0; lowerIndex + 2 < ringGrids.length; lowerIndex += 1) {
+        const lower = ringGrids[lowerIndex];
+        const middle = ringGrids[lowerIndex + 1];
+        const upper = ringGrids[lowerIndex + 2];
+        if (middle.ring - lower.ring !== 1 || upper.ring - middle.ring !== 1) {
+          continue;
+        }
+        const beforePair = outputCount;
+        if (!connectRingPair(lower, upper, middle, Math.min(2, options.maxColumnBridge), appendQuad)) {
+          break outer;
+        }
+        if (outputCount > beforePair) ringPairCount += 1;
+      }
     }
   }
 
@@ -160,6 +164,64 @@ export function buildStableScanMesh(
     rejectedTriangles,
     reason: 'ok'
   };
+}
+
+function connectRingPair(
+  lower: RingGrid,
+  upper: RingGrid,
+  blockingMiddle: RingGrid | null,
+  maxColumnBridge: number,
+  appendQuad: (a0: number, b0: number, a1: number, b1: number) => boolean
+): boolean {
+  const columns = Math.min(lower.cells.length, upper.cells.length);
+  let previousColumn = -1;
+  for (let column = 0; column < columns; column += 1) {
+    if (lower.cells[column] < 0 || upper.cells[column] < 0) continue;
+    if (previousColumn >= 0) {
+      const gap = column - previousColumn;
+      if (gap <= maxColumnBridge) {
+        const middleBlocksFallback =
+          blockingMiddle !== null &&
+          blockingMiddle.cells[previousColumn] >= 0 &&
+          blockingMiddle.cells[column] >= 0;
+        if (!middleBlocksFallback) {
+          if (
+            !appendQuad(
+              lower.cells[previousColumn],
+              upper.cells[previousColumn],
+              lower.cells[column],
+              upper.cells[column]
+            )
+          ) {
+            return false;
+          }
+        }
+      }
+    }
+    previousColumn = column;
+  }
+  return true;
+}
+
+function chooseColumnCount(
+  rings: Map<number, number[]>,
+  options: StableScanMeshBuildOptions
+): number {
+  const counts = Array.from(rings.values())
+    .map((indices) => indices.length)
+    .filter((count) => count >= options.minPointsPerRing)
+    .sort((left, right) => left - right);
+  if (counts.length === 0) return options.minColumnsPerScan;
+
+  const lowerQuartile = counts[Math.floor((counts.length - 1) * 0.25)];
+  const targetFill = Math.max(0.25, Math.min(0.95, options.targetCellFillRatio));
+  const estimated = Math.round(lowerQuartile / targetFill);
+  const clamped = Math.max(
+    options.minColumnsPerScan,
+    Math.min(options.maxColumnsPerScan, estimated)
+  );
+  // A multiple of eight keeps the angular bins stable and inexpensive.
+  return Math.max(16, Math.round(clamped / 8) * 8);
 }
 
 function collectSensorBuckets(cloud: ParsedCloud): Map<number, SensorBuckets> {
@@ -231,9 +293,10 @@ function buildRingGrid(
   cloud: ParsedCloud,
   ranges: Float32Array,
   timeDomain: TimeDomain,
+  columnCount: number,
   options: StableScanMeshBuildOptions
 ): RingGrid {
-  const columns = Math.max(16, Math.floor(options.columnsPerScan));
+  const columns = Math.max(16, Math.floor(columnCount));
   const cells = new Int32Array(columns);
   cells.fill(-1);
   const scores = new Float64Array(columns);
