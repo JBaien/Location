@@ -24,4 +24,5 @@ services:
     command:
       - bringup
       - enable_target_localizer:=false
+      - enable_local_tsdf_mesh:=false
       - enable_record:=false

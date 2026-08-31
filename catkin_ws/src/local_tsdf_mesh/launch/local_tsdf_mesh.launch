@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="config" default="$(find local_tsdf_mesh)/config/local_tsdf_mesh.yaml"/>
+  <arg name="node_name" default="local_tsdf_mesh_node"/>
+
+  <node pkg="local_tsdf_mesh"
+        type="local_tsdf_mesh_node"
+        name="$(arg node_name)"
+        output="screen"
+        required="false">
+    <rosparam command="load" file="$(arg config)"/>
+  </node>
+</launch>

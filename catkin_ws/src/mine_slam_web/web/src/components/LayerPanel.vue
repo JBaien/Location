@@ -4,7 +4,7 @@ import type { LayerState } from '../viewer/SceneView';
 defineProps<{ layers: LayerState }>();
 const emit = defineEmits<{ change: [layers: LayerState] }>();
 
-type VisibleLayer = 'path' | 'current' | 'mesh' | 'stable';
+type VisibleLayer = 'path' | 'current' | 'mesh' | 'tsdfMesh' | 'stable';
 
 function update(key: VisibleLayer, value: boolean, layers: LayerState) {
   emit('change', { ...layers, [key]: value });
@@ -25,6 +25,10 @@ function update(key: VisibleLayer, value: boolean, layers: LayerState) {
     <label class="check-row">
       <input type="checkbox" :checked="layers.mesh" @change="update('mesh', ($event.target as HTMLInputElement).checked, layers)" />
       <span>实时表面</span>
+    </label>
+    <label class="check-row">
+      <input type="checkbox" :checked="layers.tsdfMesh" @change="update('tsdfMesh', ($event.target as HTMLInputElement).checked, layers)" />
+      <span>本地 TSDF 表面</span>
     </label>
     <label class="check-row">
       <input type="checkbox" :checked="layers.stable" @change="update('stable', ($event.target as HTMLInputElement).checked, layers)" />

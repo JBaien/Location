@@ -56,6 +56,7 @@ RUN sed -i "s@http://archive.ubuntu.com/ubuntu@${UBUNTU_APT_MIRROR}@g; s@http://
     ros-melodic-rosunit \
     ros-melodic-sensor-msgs \
     ros-melodic-std-msgs \
+    ros-melodic-visualization-msgs \
     ros-melodic-tf \
     ros-melodic-tf2-eigen \
     ros-melodic-tf2-geometry-msgs \
@@ -83,7 +84,7 @@ ENV CATKIN_WS=/catkin_ws
 ENV MINE_RUNTIME_DIR=/config
 ENV MINE_WEB_DIST=/opt/mine_slam_web/dist
 
-EXPOSE 18080 9001 9002
+EXPOSE 18080 9001 9002 9003
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bringup"]

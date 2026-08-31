@@ -2,9 +2,11 @@ web_viewer:
   websocket:
     cloud_port: 9001
     status_port: 9002
+    mesh_port: 9003
   topics:
     current_cloud: /cloud_registered_body
     stable_map: /slam/stable_map
+    local_tsdf_mesh: /local_tsdf_mesh/mesh
     path: /slam/global_path
     odom: /slam/global_odom
     odom_fallback: /Odometry
@@ -16,11 +18,18 @@ web_viewer:
     send_rate_hz: 0.0
     voxel_size_m: 0.0
     max_points: 200000
-    transform_body_to_map: true
+    # Local TSDF markers are published in the latest cloud-local frame. Keep
+    # the current cloud in that same frame when both layers are displayed.
+    transform_body_to_map: false
   stable_map:
     send_rate_hz: 0.5
     voxel_size_m: 0.20
     max_points: 300000
+  local_tsdf_mesh:
+    max_vertices: 600000
+    max_packet_bytes: 16777216
+    max_queue_bytes: 41943040
+    stale_timeout_sec: 2.0
   path:
     max_points: 20000
     min_step_m: 0.05

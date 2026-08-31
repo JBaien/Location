@@ -4,6 +4,7 @@
   <arg name="enable_driver" default="true"/>
   <arg name="enable_fusion" default="true"/>
   <arg name="enable_target_localizer" default="true"/>
+  <arg name="enable_local_tsdf_mesh" default="false"/>
   <arg name="enable_web_bridge" default="true"/>
   <arg name="enable_record" default="false"/>
 
@@ -26,6 +27,7 @@
   <arg name="timoo_sdk_fusion_config" default="/config/lidar_fusion/multi_lidar_fusion_timoo_sdk.yaml"/>
   <arg name="fusion_config" default=""/>
   <arg name="target_config" default="/config/target_localizer/target_localizer.yaml"/>
+  <arg name="local_tsdf_mesh_config" default="/config/local_tsdf_mesh/local_tsdf_mesh.yaml"/>
   <arg name="web_config" default="/config/web/web_viewer.yaml"/>
   <arg name="timoo_record_launch" default="/config/launch/record_points_timoo.launch"/>
   <arg name="tmlidar_record_launch" default="/config/launch/record_points_tmlidar.launch"/>
@@ -85,6 +87,12 @@
   <group if="$(arg enable_target_localizer)">
     <include file="$(find target_localizer)/launch/target_localizer.launch">
       <arg name="config" value="$(arg target_config)"/>
+    </include>
+  </group>
+
+  <group if="$(arg enable_local_tsdf_mesh)">
+    <include file="$(find local_tsdf_mesh)/launch/local_tsdf_mesh.launch">
+      <arg name="config" value="$(arg local_tsdf_mesh_config)"/>
     </include>
   </group>
 

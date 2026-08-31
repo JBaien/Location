@@ -26,3 +26,4 @@ __pycache__/
 docker/runtime/bags/*
 !docker/runtime/bags/.gitkeep
 graphify-out/*
+/Testing/

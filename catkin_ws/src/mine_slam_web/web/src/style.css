@@ -612,6 +612,31 @@ input {
   font-variant-numeric: tabular-nums;
 }
 
+.mesh-diagnostics .setting-row strong {
+  font-size: 12px;
+}
+
+.diagnostic-reason strong {
+  max-width: 176px;
+  overflow: hidden;
+  color: #ffdca8;
+  font-family: ui-monospace, "Cascadia Code", "Noto Sans Mono", monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnostic-note {
+  margin: 0;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.diagnostic-note code {
+  color: #9fe4ff;
+  font-family: ui-monospace, "Cascadia Code", "Noto Sans Mono", monospace;
+}
+
 .select {
   width: 100%;
   min-height: 36px;

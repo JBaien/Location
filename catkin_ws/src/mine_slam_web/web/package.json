@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vue-tsc --noEmit && vite build",
+    "test": "tsc -p test/tsconfig.json --noEmit && esbuild test/StableScanMeshBuilder.test.ts --bundle --platform=node --format=esm --outfile=/tmp/mine-slam-web-mesh-tests.mjs && esbuild test/LocalTsdfMeshClient.test.ts --bundle --platform=node --format=esm --outfile=/tmp/mine-slam-web-tsdf-packet-tests.mjs && node --test /tmp/mine-slam-web-mesh-tests.mjs /tmp/mine-slam-web-tsdf-packet-tests.mjs",
+    "diagnose:live": "esbuild test/LiveMeshDiagnostics.ts --bundle --platform=node --format=esm --outfile=/tmp/mine-slam-web-live-diagnostics.mjs && node /tmp/mine-slam-web-live-diagnostics.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

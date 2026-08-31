@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   std_msgs
   target_localizer
+  visualization_msgs
 )
 
 find_package(Boost REQUIRED COMPONENTS system thread)
@@ -18,7 +19,7 @@ find_package(OpenSSL REQUIRED)
 
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS nav_msgs roscpp sensor_msgs std_msgs target_localizer
+  CATKIN_DEPENDS nav_msgs roscpp sensor_msgs std_msgs target_localizer visualization_msgs
 )
 
 include_directories(
@@ -29,6 +30,7 @@ include_directories(
 )
 
 add_library(mine_slam_web_lib
+  src/mesh_encoder.cpp
   src/pointcloud_downsampler.cpp
   src/pointcloud_encoder.cpp
   src/websocket_server.cpp
@@ -47,6 +49,16 @@ target_link_libraries(mine_web_bridge_node
   ${catkin_LIBRARIES}
   ${Boost_LIBRARIES}
 )
+
+if(CATKIN_ENABLE_TESTING)
+  catkin_add_gtest(mesh_encoder_test test/mesh_encoder_test.cpp)
+  if(TARGET mesh_encoder_test)
+    target_link_libraries(mesh_encoder_test
+      mine_slam_web_lib
+      ${catkin_LIBRARIES}
+    )
+  endif()
+endif()
 
 install(TARGETS mine_slam_web_lib mine_web_bridge_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

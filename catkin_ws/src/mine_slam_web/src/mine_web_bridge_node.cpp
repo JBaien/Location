@@ -18,7 +18,9 @@
 #include <std_msgs/String.h>
 #include <target_localizer/EquipmentState.h>
 #include <target_localizer/TargetXY.h>
+#include <visualization_msgs/Marker.h>
 
+#include "mine_slam_web/mesh_encoder.h"
 #include "mine_slam_web/pointcloud_encoder.h"
 #include "mine_slam_web/websocket_server.h"
 
@@ -167,15 +169,37 @@ MapTransformSnapshot poseToMapTransform(const PoseState& pose) {
 
 class MineWebBridgeNode {
  public:
-  MineWebBridgeNode() : nh_(), cloud_server_(readPort("cloud_port", 9001), true), status_server_(readPort("status_port", 9002), false) {
+  MineWebBridgeNode()
+      : nh_(),
+        cloud_server_(readPort("cloud_port", 9001), true),
+        status_server_(readPort("status_port", 9002), false),
+        mesh_server_(readPort("mesh_port", 9003), true) {
     loadConfig();
+    mesh_server_.configureLatestOnlyQueue(
+        static_cast<std::size_t>(std::max(0, mesh_max_queue_bytes_)));
+    // Always give a newly connected browser an authoritative empty state, even
+    // when the mesh producer is disabled or has not published its first Marker.
+    publishMeshClear(ros::Time(), "");
+    mesh_server_.setInitialPayloadProvider([this]() {
+      std::vector<WebSocketServer::Payload> payloads;
+      std::lock_guard<std::mutex> lock(latest_mutex_);
+      if (latest_mesh_packet_) {
+        payloads.push_back(latest_mesh_packet_);
+      }
+      return payloads;
+    });
     cloud_server_.start();
     status_server_.start();
+    mesh_server_.start();
     cloud_server_.setClientConnectedCallback([this]() { sendInitialSnapshots("cloud_client_initial_snapshot"); });
     status_server_.setClientConnectedCallback([this]() { sendInitialSnapshots("status_client_initial_snapshot"); });
 
     current_sub_ = nh_.subscribe(current_cloud_topic_, 1, &MineWebBridgeNode::currentCloudCallback, this);
     stable_sub_ = nh_.subscribe(stable_map_topic_, 1, &MineWebBridgeNode::stableMapCallback, this);
+    if (!mesh_topic_.empty()) {
+      mesh_sub_ = nh_.subscribe(mesh_topic_, 1,
+                                &MineWebBridgeNode::meshCallback, this);
+    }
     if (!path_topic_.empty()) {
       path_sub_ = nh_.subscribe(path_topic_, 5, &MineWebBridgeNode::pathCallback, this);
     }
@@ -199,9 +223,12 @@ class MineWebBridgeNode {
     odom_fallback_sub_ = nh_.subscribe(odom_fallback_topic_, 50, &MineWebBridgeNode::fallbackOdomCallback, this);
     clock_sub_ = nh_.subscribe("/clock", 10, &MineWebBridgeNode::clockCallback, this);
     status_timer_ = nh_.createTimer(ros::Duration(0.1), &MineWebBridgeNode::statusTimerCallback, this);
+    mesh_watchdog_timer_ = nh_.createWallTimer(
+        ros::WallDuration(0.2), &MineWebBridgeNode::meshWatchdogCallback, this);
 
     ROS_INFO_STREAM("mine_slam_web bridge listening: cloud ws port " << cloud_port_
-                    << ", status ws port " << status_port_);
+                    << ", status ws port " << status_port_
+                    << ", mesh ws port " << mesh_port_);
     ROS_INFO_STREAM("mine_slam_web topics: current=" << current_cloud_topic_
                     << ", stable=" << stable_map_topic_
                     << ", path=" << path_topic_
@@ -209,8 +236,22 @@ class MineWebBridgeNode {
                     << ", equipment=" << equipment_state_topic_
                     << ", reference=" << sensor_reference_topic_
                     << ", target_xy=" << target_xy_topic_
+                    << ", local_tsdf_mesh=" << mesh_topic_
                     << ", odom=" << odom_topic_
                     << ", fallback=" << odom_fallback_topic_);
+    ROS_INFO_STREAM("mine_slam_web current cloud config: rate_hz=" << current_rate_hz_
+                    << ", voxel_size_m=" << current_voxel_size_m_
+                    << ", max_points=" << current_max_points_
+                    << ", transform_body_to_map="
+                    << (transform_current_body_to_map_ ? "true" : "false"));
+  }
+
+  ~MineWebBridgeNode() {
+    // Providers and connection callbacks capture this node. Join their I/O
+    // threads while every captured mutex/cache member is still alive.
+    mesh_server_.stop();
+    status_server_.stop();
+    cloud_server_.stop();
   }
 
  private:
@@ -223,8 +264,11 @@ class MineWebBridgeNode {
   void loadConfig() {
     cloud_port_ = readPort("cloud_port", 9001);
     status_port_ = readPort("status_port", 9002);
+    mesh_port_ = readPort("mesh_port", 9003);
     nh_.param<std::string>("web_viewer/topics/current_cloud", current_cloud_topic_, "/cloud_registered_body");
     nh_.param<std::string>("web_viewer/topics/stable_map", stable_map_topic_, "/slam/stable_map");
+    nh_.param<std::string>("web_viewer/topics/local_tsdf_mesh", mesh_topic_,
+                           "/local_tsdf_mesh/mesh");
     nh_.param<std::string>("web_viewer/topics/path", path_topic_, "/slam/global_path");
     nh_.param<std::string>("web_viewer/topics/progressive_reveal_diagnostics",
                            progressive_reveal_topic_, "/sim/progressive_reveal_diagnostics");
@@ -244,10 +288,23 @@ class MineWebBridgeNode {
     nh_.param<double>("web_viewer/stable_map/send_rate_hz", stable_rate_hz_, 0.5);
     nh_.param<double>("web_viewer/stable_map/voxel_size_m", stable_voxel_size_m_, 0.20);
     nh_.param<int>("web_viewer/stable_map/max_points", stable_max_points_, 300000);
+    nh_.param<int>("web_viewer/local_tsdf_mesh/max_vertices",
+                   mesh_max_vertices_, 600000);
+    nh_.param<int>("web_viewer/local_tsdf_mesh/max_packet_bytes",
+                   mesh_max_packet_bytes_, 16 * 1024 * 1024);
+    nh_.param<int>("web_viewer/local_tsdf_mesh/max_queue_bytes",
+                   mesh_max_queue_bytes_, 40 * 1024 * 1024);
+    nh_.param<double>("web_viewer/local_tsdf_mesh/stale_timeout_sec",
+                      mesh_stale_timeout_sec_, 2.0);
     nh_.param<int>("web_viewer/path/max_points", path_max_points_, 5000);
     nh_.param<double>("web_viewer/path/min_step_m", path_min_step_m_, 0.05);
     nh_.param<double>("web_viewer/path/reset_jump_m", path_reset_jump_m_, 5.0);
     nh_.param<double>("web_viewer/reflector/intensity_threshold", reflector_intensity_threshold_, 180.0);
+    if (!std::isfinite(mesh_stale_timeout_sec_) ||
+        mesh_stale_timeout_sec_ <= 0.0) {
+      throw std::invalid_argument(
+          "web_viewer/local_tsdf_mesh/stale_timeout_sec must be finite and positive");
+    }
   }
 
   void currentCloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg) {
@@ -258,6 +315,98 @@ class MineWebBridgeNode {
   void stableMapCallback(const sensor_msgs::PointCloud2ConstPtr& msg) {
     handleCloud(*msg, CLOUD_STABLE, stable_rate_hz_, stable_voxel_size_m_,
                 static_cast<std::size_t>(std::max(0, stable_max_points_)), last_stable_send_);
+  }
+
+  void meshCallback(const visualization_msgs::MarkerConstPtr& msg) {
+    const bool matching_marker =
+        msg->ns == "local_tsdf_mesh" && msg->id == 0;
+    if (msg->action == visualization_msgs::Marker::DELETEALL) {
+      last_mesh_message_wall_ns_.store(ros::WallTime::now().toNSec());
+      publishMeshClear(msg->header.stamp, msg->header.frame_id);
+      return;
+    }
+    if (!matching_marker) {
+      ROS_WARN_STREAM_THROTTLE(
+          2.0,
+          "mine_slam_web: ignore mesh Marker with ns/id " << msg->ns << "/"
+                                                          << msg->id);
+      return;
+    }
+    // Only the authoritative Marker may keep an existing snapshot alive.
+    // Otherwise an unrelated publisher on the same topic could prevent the
+    // watchdog from ever clearing stale geometry.
+    last_mesh_message_wall_ns_.store(ros::WallTime::now().toNSec());
+    if (msg->action == visualization_msgs::Marker::DELETE ||
+        (msg->action == visualization_msgs::Marker::ADD &&
+         msg->type == visualization_msgs::Marker::TRIANGLE_LIST &&
+         msg->points.empty())) {
+      publishMeshClear(msg->header.stamp, msg->header.frame_id);
+      return;
+    }
+    if (msg->action != visualization_msgs::Marker::ADD ||
+        msg->type != visualization_msgs::Marker::TRIANGLE_LIST) {
+      ROS_WARN_STREAM_THROTTLE(
+          2.0,
+          "mine_slam_web: local TSDF mesh must be TRIANGLE_LIST ADD/MODIFY or DELETE");
+      publishMeshClear(msg->header.stamp, msg->header.frame_id);
+      return;
+    }
+
+    const std::uint64_t revision = mesh_revision_.load() + 1U;
+    MeshEncodeOptions options;
+    options.max_vertices =
+        static_cast<std::size_t>(std::max(0, mesh_max_vertices_));
+    options.max_packet_bytes =
+        static_cast<std::size_t>(std::max(0, mesh_max_packet_bytes_));
+    auto encoded = encodeTriangleListMarker(*msg, revision, options);
+    if (!encoded.ok()) {
+      ROS_WARN_STREAM_THROTTLE(
+          2.0, "mine_slam_web: reject local TSDF mesh snapshot: "
+                   << encoded.error << " (points=" << msg->points.size() << ")");
+      publishMeshClear(msg->header.stamp, msg->header.frame_id);
+      return;
+    }
+
+    auto packet = std::make_shared<const std::vector<std::uint8_t>>(
+        std::move(encoded.buffer));
+    {
+      std::lock_guard<std::mutex> lock(latest_mutex_);
+      latest_mesh_packet_ = packet;
+      latest_mesh_stamp_ = msg->header.stamp;
+      latest_mesh_frame_ = msg->header.frame_id;
+      mesh_revision_.store(revision);
+      mesh_vertex_count_.store(encoded.vertex_count);
+      mesh_triangle_count_.store(encoded.triangle_count);
+      mesh_packet_bytes_.store(packet->size());
+    }
+    mesh_server_.broadcast(packet);
+  }
+
+  void publishMeshClear(const ros::Time& stamp, const std::string& frame_id) {
+    const std::uint64_t revision = mesh_revision_.load() + 1U;
+    MeshEncodeOptions options;
+    options.max_vertices =
+        static_cast<std::size_t>(std::max(0, mesh_max_vertices_));
+    options.max_packet_bytes =
+        static_cast<std::size_t>(std::max(0, mesh_max_packet_bytes_));
+    auto bytes = encodeMeshClearPacket(stamp, frame_id, revision, options);
+    if (bytes.empty()) {
+      ROS_WARN_THROTTLE(2.0, "mine_slam_web: failed to encode mesh clear packet");
+      return;
+    }
+    auto packet = std::make_shared<const std::vector<std::uint8_t>>(
+        std::move(bytes));
+    {
+      std::lock_guard<std::mutex> lock(latest_mutex_);
+      latest_mesh_packet_ = packet;
+      latest_mesh_stamp_ = stamp;
+      latest_mesh_frame_ = frame_id;
+      mesh_revision_.store(revision);
+      mesh_vertex_count_.store(0);
+      mesh_triangle_count_.store(0);
+      mesh_packet_bytes_.store(packet->size());
+    }
+    mesh_server_.broadcast(packet);
   }
 
   void pathCallback(const nav_msgs::PathConstPtr& msg) {
@@ -327,11 +476,13 @@ class MineWebBridgeNode {
     options.max_points = max_points;
     options.voxel_size_m = voxel_size_m;
     options.reflector_intensity_threshold = static_cast<float>(reflector_intensity_threshold_);
+    std::string encoded_frame = msg.header.frame_id;
     if (type == CLOUD_CURRENT && transform_current_body_to_map_) {
       MapTransformSnapshot transform;
       {
         std::lock_guard<std::mutex> lock(state_mutex_);
         transform = poseToMapTransform(pose_);
+        encoded_frame = map_frame_;
       }
       if (!transform.valid) {
         ROS_WARN_STREAM_THROTTLE(
@@ -345,24 +496,22 @@ class MineWebBridgeNode {
     }
     auto encoded = encodePointCloud2(msg, options);
 
-    if (type == CLOUD_CURRENT) {
-      current_raw_points_.store(encoded.raw_points);
-      current_encoded_points_.store(encoded.encoded_points);
-    } else {
-      stable_raw_points_.store(encoded.raw_points);
-      stable_encoded_points_.store(encoded.encoded_points);
-    }
-
     if (!encoded.buffer.empty()) {
       auto packet = std::make_shared<const std::vector<std::uint8_t>>(std::move(encoded.buffer));
       {
         std::lock_guard<std::mutex> lock(latest_mutex_);
         if (type == CLOUD_CURRENT) {
+          current_raw_points_.store(encoded.raw_points);
+          current_encoded_points_.store(encoded.encoded_points);
           latest_current_cloud_packet_ = packet;
           latest_current_stamp_ = msg.header.stamp;
+          latest_current_frame_ = encoded_frame;
         } else {
+          stable_raw_points_.store(encoded.raw_points);
+          stable_encoded_points_.store(encoded.encoded_points);
           latest_stable_map_packet_ = packet;
           latest_stable_stamp_ = msg.header.stamp;
+          latest_stable_frame_ = encoded_frame;
         }
       }
       cloud_server_.broadcast(packet);
@@ -637,19 +786,24 @@ class MineWebBridgeNode {
       last_path_reset_reason_ = reason;
       ++path_reset_count_;
     }
-    current_raw_points_.store(0);
-    current_encoded_points_.store(0);
-    stable_raw_points_.store(0);
-    stable_encoded_points_.store(0);
     last_current_send_ = ros::Time();
     last_stable_send_ = ros::Time();
     {
       std::lock_guard<std::mutex> lock(latest_mutex_);
       latest_current_cloud_packet_ = empty_current;
       latest_stable_map_packet_ = empty_stable;
+      latest_current_stamp_ = stamp;
+      latest_stable_stamp_ = stamp;
+      latest_current_frame_.clear();
+      latest_stable_frame_.clear();
+      current_raw_points_.store(0);
+      current_encoded_points_.store(0);
+      stable_raw_points_.store(0);
+      stable_encoded_points_.store(0);
       latest_initial_snapshot_reason_ = reason;
       ++session_id_;
     }
+    publishMeshClear(stamp, "");
     cloud_server_.broadcast(empty_stable);
     cloud_server_.broadcast(empty_current);
     const std::string status = buildStatusJson();
@@ -779,6 +933,58 @@ class MineWebBridgeNode {
       target_xy = target_xy_;
     }
 
+    const std::size_t current_publisher_count = current_sub_.getNumPublishers();
+    const std::size_t mesh_publisher_count = mesh_sub_.getNumPublishers();
+    const std::uint64_t mesh_message_wall_ns =
+        last_mesh_message_wall_ns_.load();
+    const std::uint64_t status_wall_ns = ros::WallTime::now().toNSec();
+    const double mesh_message_age_ms =
+        mesh_message_wall_ns > 0U && status_wall_ns >= mesh_message_wall_ns
+            ? static_cast<double>(status_wall_ns - mesh_message_wall_ns) * 1e-6
+            : -1.0;
+    std::size_t current_raw_points = 0;
+    std::size_t current_encoded_points = 0;
+    std::size_t stable_raw_points = 0;
+    std::size_t stable_encoded_points = 0;
+    std::uint64_t mesh_revision = 0;
+    std::size_t mesh_vertex_count = 0;
+    std::size_t mesh_triangle_count = 0;
+    std::size_t mesh_packet_bytes = 0;
+    std::string latest_mesh_frame;
+    std::string latest_current_frame;
+    std::string latest_stable_frame;
+    std::uint64_t latest_mesh_stamp_ns = 0;
+    std::uint64_t latest_current_stamp_ns = 0;
+    bool latest_current_cached = false;
+    bool latest_stable_cached = false;
+    std::string initial_snapshot_reason;
+    std::uint64_t current_session_id = 0;
+    {
+      std::lock_guard<std::mutex> lock(latest_mutex_);
+      latest_mesh_frame = latest_mesh_frame_;
+      latest_current_frame = latest_current_frame_;
+      latest_stable_frame = latest_stable_frame_;
+      latest_mesh_stamp_ns = stampNs(latest_mesh_stamp_);
+      latest_current_stamp_ns = stampNs(latest_current_stamp_);
+      mesh_revision = mesh_revision_.load();
+      mesh_vertex_count = mesh_vertex_count_.load();
+      mesh_triangle_count = mesh_triangle_count_.load();
+      mesh_packet_bytes = mesh_packet_bytes_.load();
+      current_raw_points = current_raw_points_.load();
+      current_encoded_points = current_encoded_points_.load();
+      stable_raw_points = stable_raw_points_.load();
+      stable_encoded_points = stable_encoded_points_.load();
+      latest_current_cached = static_cast<bool>(latest_current_cloud_packet_);
+      latest_stable_cached = static_cast<bool>(latest_stable_map_packet_);
+      initial_snapshot_reason = latest_initial_snapshot_reason_;
+      current_session_id = session_id_;
+    }
+    const bool current_at_point_limit =
+        current_max_points_ > 0 &&
+        current_encoded_points >= static_cast<std::size_t>(current_max_points_);
+    const std::string viewer_fixed_frame =
+        latest_current_frame.empty() ? map_frame : latest_current_frame;
+
     std::ostringstream json;
     json.setf(std::ios::fixed);
     json.precision(4);
@@ -786,15 +992,38 @@ class MineWebBridgeNode {
     json << "\"connected\":true,";
     json << "\"cloud_clients\":" << cloud_server_.clientCount() << ",";
     json << "\"status_clients\":" << status_server_.clientCount() << ",";
-    json << "\"current_cloud_points\":" << current_encoded_points_.load() << ",";
-    json << "\"current_cloud_raw_points\":" << current_raw_points_.load() << ",";
-    json << "\"stable_map_points\":" << stable_encoded_points_.load() << ",";
-    json << "\"stable_map_raw_points\":" << stable_raw_points_.load() << ",";
-    json << "\"latest_current_cloud_cached\":" << (hasLatestCurrentCloud() ? "true" : "false") << ",";
-    json << "\"latest_stable_map_cached\":" << (hasLatestStableMap() ? "true" : "false") << ",";
+    json << "\"mesh_clients\":" << mesh_server_.clientCount() << ",";
+    json << "\"local_tsdf_mesh_revision\":" << mesh_revision << ",";
+    json << "\"local_tsdf_mesh_vertices\":" << mesh_vertex_count << ",";
+    json << "\"local_tsdf_mesh_triangles\":" << mesh_triangle_count << ",";
+    json << "\"local_tsdf_mesh_packet_bytes\":" << mesh_packet_bytes << ",";
+    json << "\"local_tsdf_mesh_stamp_ns\":\"" << latest_mesh_stamp_ns << "\",";
+    json << "\"local_tsdf_mesh_frame_id\":\"" << latest_mesh_frame << "\",";
+    json << "\"local_tsdf_mesh_source_topic\":\"" << mesh_topic_ << "\",";
+    json << "\"local_tsdf_mesh_publisher_count\":" << mesh_publisher_count << ",";
+    json << "\"local_tsdf_mesh_message_age_ms\":" << mesh_message_age_ms << ",";
+    json << "\"local_tsdf_mesh_stale_timeout_sec\":"
+         << mesh_stale_timeout_sec_ << ",";
+    json << "\"current_cloud_points\":" << current_encoded_points << ",";
+    json << "\"current_cloud_raw_points\":" << current_raw_points << ",";
+    json << "\"current_cloud_stamp_ns\":\"" << latest_current_stamp_ns << "\",";
+    json << "\"current_cloud_publisher_count\":" << current_publisher_count << ",";
+    json << "\"current_cloud_frame_id\":\"" << latest_current_frame << "\",";
+    json << "\"current_cloud_send_rate_hz\":" << current_rate_hz_ << ",";
+    json << "\"current_cloud_voxel_size_m\":" << current_voxel_size_m_ << ",";
+    json << "\"current_cloud_max_points\":" << current_max_points_ << ",";
+    json << "\"current_cloud_transform_body_to_map\":"
+         << (transform_current_body_to_map_ ? "true" : "false") << ",";
+    json << "\"current_cloud_at_point_limit\":"
+         << (current_at_point_limit ? "true" : "false") << ",";
+    json << "\"stable_map_points\":" << stable_encoded_points << ",";
+    json << "\"stable_map_raw_points\":" << stable_raw_points << ",";
+    json << "\"stable_map_frame_id\":\"" << latest_stable_frame << "\",";
+    json << "\"latest_current_cloud_cached\":" << (latest_current_cached ? "true" : "false") << ",";
+    json << "\"latest_stable_map_cached\":" << (latest_stable_cached ? "true" : "false") << ",";
     json << "\"latest_path_cached\":" << ((snapshot_path_count > 0) ? "true" : "false") << ",";
-    json << "\"initial_snapshot_reason\":\"" << latest_initialSnapshotReason() << "\",";
-    json << "\"session_id\":" << sessionId() << ",";
+    json << "\"initial_snapshot_reason\":\"" << initial_snapshot_reason << "\",";
+    json << "\"session_id\":" << current_session_id << ",";
     json << "\"current_cloud_source_topic\":\"" << current_cloud_topic_ << "\",";
     json << "\"stable_map_source_topic\":\"" << stable_map_topic_ << "\",";
     json << "\"current_layer_semantics\":\"replace\",";
@@ -846,10 +1075,11 @@ class MineWebBridgeNode {
     json << "\"odom_source\":\"" << odomSourceName(odom_source) << "\",";
     json << "\"path_reset_count\":" << path_reset_count << ",";
     json << "\"last_path_reset_reason\":\"" << last_path_reset_reason << "\",";
-    json << "\"fixed_frame\":\"map\",";
-    json << "\"pointcloud_frame\":\"map\",";
+    json << "\"fixed_frame\":\"" << viewer_fixed_frame << "\",";
+    json << "\"pointcloud_frame\":\"" << viewer_fixed_frame << "\",";
     json << "\"pose_frame\":\"" << map_frame << "\",";
-    json << "\"transform_applied_in_backend\":true,";
+    json << "\"transform_applied_in_backend\":"
+         << (transform_current_body_to_map_ ? "true" : "false") << ",";
     json << "\"transform_applied_in_frontend\":false,";
     json << "\"transform_axis_mapping\":\"ros_xyz_to_three_xyz\",";
     json << "\"double_transform_detected\":false,";
@@ -948,6 +1178,14 @@ class MineWebBridgeNode {
   }
 
   void statusTimerCallback(const ros::TimerEvent&) {
+    const std::size_t publisher_count = current_sub_.getNumPublishers();
+    if (publisher_count > 1U) {
+      ROS_WARN_STREAM_THROTTLE(
+          2.0,
+          "mine_slam_web: current cloud topic " << current_cloud_topic_
+          << " has " << publisher_count
+          << " publishers; bag and fusion output may be mixed");
+    }
     const std::string json = buildStatusJson();
     {
       std::lock_guard<std::mutex> lock(latest_mutex_);
@@ -958,9 +1196,40 @@ class MineWebBridgeNode {
     }
   }
 
+  void meshWatchdogCallback(const ros::WallTimerEvent&) {
+    const std::size_t publisher_count = mesh_sub_.getNumPublishers();
+    if (publisher_count > 1U) {
+      ROS_WARN_STREAM_THROTTLE(
+          2.0, "mine_slam_web: local mesh topic " << mesh_topic_ << " has "
+                                                   << publisher_count
+                                                   << " publishers");
+    }
+    const std::uint64_t last_message_ns = last_mesh_message_wall_ns_.load();
+    const std::uint64_t now_ns = ros::WallTime::now().toNSec();
+    const bool timed_out =
+        last_message_ns > 0U && now_ns > last_message_ns &&
+        static_cast<double>(now_ns - last_message_ns) * 1e-9 >
+            mesh_stale_timeout_sec_;
+    // Publisher count is diagnostic only. A short producer restart or a
+    // one-shot/latched publisher must still receive the configured grace
+    // period before its last valid snapshot is cleared.
+    if (mesh_triangle_count_.load() > 0U && timed_out) {
+      ROS_WARN_STREAM_THROTTLE(
+          2.0, "mine_slam_web: clearing stale local TSDF mesh (publishers="
+                   << publisher_count << ", timed_out="
+                   << (timed_out ? "true" : "false") << ")");
+      publishMeshClear(ros::Time::now(), "");
+    }
+  }
+
   bool hasLatestCurrentCloud() const {
     std::lock_guard<std::mutex> lock(latest_mutex_);
     return static_cast<bool>(latest_current_cloud_packet_);
+  }
+
+  std::uint64_t latestCurrentStampNs() const {
+    std::lock_guard<std::mutex> lock(latest_mutex_);
+    return stampNs(latest_current_stamp_);
   }
 
   bool hasLatestStableMap() const {
@@ -1006,10 +1275,13 @@ class MineWebBridgeNode {
   ros::NodeHandle nh_;
   int cloud_port_ = 9001;
   int status_port_ = 9002;
+  int mesh_port_ = 9003;
   WebSocketServer cloud_server_;
   WebSocketServer status_server_;
+  WebSocketServer mesh_server_;
   ros::Subscriber current_sub_;
   ros::Subscriber stable_sub_;
+  ros::Subscriber mesh_sub_;
   ros::Subscriber path_sub_;
   ros::Subscriber progressive_reveal_sub_;
   ros::Subscriber equipment_state_sub_;
@@ -1019,9 +1291,11 @@ class MineWebBridgeNode {
   ros::Subscriber odom_fallback_sub_;
   ros::Subscriber clock_sub_;
   ros::Timer status_timer_;
+  ros::WallTimer mesh_watchdog_timer_;
 
   std::string current_cloud_topic_ = "/cloud_registered_body";
   std::string stable_map_topic_ = "/slam/stable_map";
+  std::string mesh_topic_ = "/local_tsdf_mesh/mesh";
   std::string path_topic_ = "/slam/global_path";
   std::string progressive_reveal_topic_ = "/sim/progressive_reveal_diagnostics";
   std::string equipment_state_topic_ = "/equipment_state";
@@ -1036,6 +1310,10 @@ class MineWebBridgeNode {
   double stable_rate_hz_ = 0.5;
   double stable_voxel_size_m_ = 0.20;
   int stable_max_points_ = 300000;
+  int mesh_max_vertices_ = 600000;
+  int mesh_max_packet_bytes_ = 16 * 1024 * 1024;
+  int mesh_max_queue_bytes_ = 40 * 1024 * 1024;
+  double mesh_stale_timeout_sec_ = 2.0;
   int path_max_points_ = 5000;
   double path_min_step_m_ = 0.05;
   double path_reset_jump_m_ = 5.0;
@@ -1050,15 +1328,25 @@ class MineWebBridgeNode {
   std::atomic<std::size_t> current_encoded_points_{0};
   std::atomic<std::size_t> stable_raw_points_{0};
   std::atomic<std::size_t> stable_encoded_points_{0};
+  std::atomic<std::uint64_t> mesh_revision_{0};
+  std::atomic<std::size_t> mesh_vertex_count_{0};
+  std::atomic<std::size_t> mesh_triangle_count_{0};
+  std::atomic<std::size_t> mesh_packet_bytes_{0};
+  std::atomic<std::uint64_t> last_mesh_message_wall_ns_{0};
 
   mutable std::mutex latest_mutex_;
   std::shared_ptr<const std::vector<std::uint8_t>> latest_current_cloud_packet_;
   std::shared_ptr<const std::vector<std::uint8_t>> latest_stable_map_packet_;
+  std::shared_ptr<const std::vector<std::uint8_t>> latest_mesh_packet_;
   std::string latest_status_json_;
   std::string latest_initial_snapshot_reason_ = "none";
   std::uint64_t session_id_ = 0;
   ros::Time latest_current_stamp_;
   ros::Time latest_stable_stamp_;
+  ros::Time latest_mesh_stamp_;
+  std::string latest_mesh_frame_;
+  std::string latest_current_frame_;
+  std::string latest_stable_frame_;
 
   std::mutex state_mutex_;
   PoseState pose_;

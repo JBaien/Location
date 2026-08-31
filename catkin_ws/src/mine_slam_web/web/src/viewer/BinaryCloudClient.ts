@@ -12,13 +12,23 @@ const FIELD_TIME = 1 << 5;
 const FIELD_AZIMUTH = 1 << 6;
 const FIELD_RANGE = 1 << 7;
 
-export type CloudHandler = (cloud: ParsedCloud) => void;
+export interface CloudDeliveryMeta {
+  packetSequence: number;
+  arrivalMs: number;
+  interArrivalMs: number | null;
+  parseMs: number;
+  packetBytes: number;
+}
+
+export type CloudHandler = (cloud: ParsedCloud, delivery: CloudDeliveryMeta) => void;
 export type ConnectionHandler = (connected: boolean) => void;
 
 export class BinaryCloudClient {
   private socket: WebSocket | null = null;
   private reconnectTimer = 0;
   private stopped = false;
+  private lastArrivalMsByCloudType = new Map<number, number>();
+  private packetSequenceByCloudType = new Map<number, number>();
 
   constructor(
     private readonly url: string,
@@ -28,6 +38,8 @@ export class BinaryCloudClient {
 
   start(): void {
     this.stopped = false;
+    this.lastArrivalMsByCloudType.clear();
+    this.packetSequenceByCloudType.clear();
     this.connect();
   }
 
@@ -40,19 +52,41 @@ export class BinaryCloudClient {
   private connect(): void {
     this.socket = new WebSocket(this.url);
     this.socket.binaryType = 'arraybuffer';
-    this.socket.onopen = () => this.onConnection(true);
+    this.socket.onopen = () => {
+      this.lastArrivalMsByCloudType.clear();
+      this.onConnection(true);
+    };
     this.socket.onclose = () => this.scheduleReconnect();
     this.socket.onerror = () => this.scheduleReconnect();
     this.socket.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) {
+        const arrivalMs = performance.now();
+        const parseStartedAtMs = performance.now();
         const parsed = parseCloudPacket(event.data);
-        if (parsed) this.onCloud(parsed);
+        const parseMs = performance.now() - parseStartedAtMs;
+        if (parsed) {
+          const lastArrivalMs = this.lastArrivalMsByCloudType.get(parsed.cloudType);
+          const interArrivalMs =
+            lastArrivalMs === undefined ? null : arrivalMs - lastArrivalMs;
+          this.lastArrivalMsByCloudType.set(parsed.cloudType, arrivalMs);
+          const packetSequence =
+            (this.packetSequenceByCloudType.get(parsed.cloudType) ?? 0) + 1;
+          this.packetSequenceByCloudType.set(parsed.cloudType, packetSequence);
+          this.onCloud(parsed, {
+            packetSequence,
+            arrivalMs,
+            interArrivalMs,
+            parseMs,
+            packetBytes: event.data.byteLength
+          });
+        }
       }
     };
   }
 
   private scheduleReconnect(): void {
     this.onConnection(false);
+    this.lastArrivalMsByCloudType.clear();
     if (this.stopped) return;
     window.clearTimeout(this.reconnectTimer);
     this.reconnectTimer = window.setTimeout(() => this.connect(), 1000);
