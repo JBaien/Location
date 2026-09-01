@@ -1,5 +1,6 @@
 multi_lidar_fusion:
   lidar_num: 3
+  enable_fusion: true
 
   lidar_topics:
     - /lidar1/timoo_points

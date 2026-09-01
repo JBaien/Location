@@ -38,6 +38,7 @@ private:
     struct Config {
         int lidar_num = 3;
         std::vector<std::string> lidar_topics;
+        bool enable_fusion = true;
         std::string output_topic = "/points_raw";
         std::string output_frame_id = "base_link";
         int sync_queue_size = 20;
@@ -82,6 +83,7 @@ private:
     void callback2(const CloudConstPtr& cloud1, const CloudConstPtr& cloud2);
     void callback3(const CloudConstPtr& cloud1, const CloudConstPtr& cloud2,
                    const CloudConstPtr& cloud3);
+    void callbackSingle(const CloudConstPtr& cloud);
     void processClouds(const std::vector<CloudConstPtr>& clouds);
 
     bool validateInputCloud(const CloudConstPtr& cloud, size_t index,
@@ -113,6 +115,7 @@ private:
 
     std::vector<std::shared_ptr<message_filters::Subscriber<CloudMsg>>>
         subscribers_;
+    ros::Subscriber single_subscriber_;
     std::shared_ptr<Synchronizer2> sync2_;
     std::shared_ptr<Synchronizer3> sync3_;
 };

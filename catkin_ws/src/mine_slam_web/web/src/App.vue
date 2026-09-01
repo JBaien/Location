@@ -286,39 +286,6 @@ onBeforeUnmount(() => {
             <strong class="metric-value"><b>{{ formatMm(status?.target_xy?.seen ? status?.target_xy?.dy_mm : undefined) }}</b><em>mm</em></strong>
           </div>
         </section>
-        <section class="info-section">
-          <h3>姿态角</h3>
-          <div class="metric-card">
-            <span class="metric-label">俯仰角</span>
-            <strong class="metric-value"><b>{{ formatAngle(cloudMetric.attitude.pitch_valid ? cloudMetric.attitude.pitch_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">横滚角</span>
-            <strong class="metric-value"><b>{{ formatAngle(cloudMetric.attitude.roll_valid ? cloudMetric.attitude.roll_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">偏航角</span>
-            <strong class="metric-value"><b>{{ formatAngle(cloudMetric.attitude.yaw_valid ? cloudMetric.attitude.yaw_deg : undefined) }}</b><em class="angle-unit">度</em></strong>
-          </div>
-        </section>
-        <section class="metric-grid distance-grid">
-          <div class="metric-card">
-            <span class="metric-label">左前</span>
-            <strong class="metric-value"><b>{{ formatDistance(cloudMetric.distances.left_front_valid ? cloudMetric.distances.left_front_mm : undefined) }}</b><em>mm</em></strong>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">右前</span>
-            <strong class="metric-value"><b>{{ formatDistance(cloudMetric.distances.right_front_valid ? cloudMetric.distances.right_front_mm : undefined) }}</b><em>mm</em></strong>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">左后</span>
-            <strong class="metric-value"><b>{{ formatDistance(cloudMetric.distances.left_rear_valid ? cloudMetric.distances.left_rear_mm : undefined) }}</b><em>mm</em></strong>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">右后</span>
-            <strong class="metric-value"><b>{{ formatDistance(cloudMetric.distances.right_rear_valid ? cloudMetric.distances.right_rear_mm : undefined) }}</b><em>mm</em></strong>
-          </div>
-        </section>
       </aside>
 
       <section class="scene-panel">

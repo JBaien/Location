@@ -89,6 +89,7 @@ Docker 运行时按驱动族拆分配置：
 ```yaml
 multi_lidar_fusion:
   lidar_num: 3
+  enable_fusion: true
 
   lidar_topics:
     - /lidar1/timoo_points
@@ -119,6 +120,7 @@ multi_lidar_fusion:
 
 - `lidar_num`：支持 `2` 或 `3`。
 - `lidar_topics`：长度必须等于 `lidar_num`。
+- `enable_fusion`：是否进行多雷达点云融合。设为 `false` 时不再等待其他雷达，仅将 `lidar_topics` 第一路点云转换至 `output_frame_id` 后发布到 `output_topic`。
 - `sync_slop`：多路点云最大同步时间差。TM16 未硬同步时可从 `0.05` 开始，现场应尽量压小。
 - `tf_timeout`：TF 查询等待时间。静态 TF 正常时不应频繁超时。
 - `normalize_point_time`：推荐开启。输出 header 使用同步组内最早时间戳，每路点的 `time` 加上该路 scan header 到输出 header 的时间偏移。

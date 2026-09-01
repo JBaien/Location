@@ -37,6 +37,8 @@ MultiLidarFusion::MultiLidarFusion(ros::NodeHandle& nh,
 
     ROS_INFO_STREAM("MultiLidarFusion initialized: lidar_num="
                     << config_.lidar_num
+                    << ", enable_fusion="
+                    << (config_.enable_fusion ? "true" : "false")
                     << ", output_topic=" << config_.output_topic
                     << ", output_frame_id=" << config_.output_frame_id
                     << ", sync_slop=" << config_.sync_slop
@@ -87,6 +89,7 @@ bool MultiLidarFusion::readStringVectorParam(
 void MultiLidarFusion::loadParameters() {
     readParam("lidar_num", config_.lidar_num);
     readStringVectorParam("lidar_topics", config_.lidar_topics);
+    readParam("enable_fusion", config_.enable_fusion);
     readParam("output_topic", config_.output_topic);
     readParam("output_frame_id", config_.output_frame_id);
     readParam("sync_queue_size", config_.sync_queue_size);
@@ -148,6 +151,16 @@ void MultiLidarFusion::validateConfig() {
 }
 
 void MultiLidarFusion::initializeSubscribers() {
+    if (!config_.enable_fusion) {
+        single_subscriber_ = nh_.subscribe<CloudMsg>(
+            config_.lidar_topics.front(), config_.sync_queue_size,
+            &MultiLidarFusion::callbackSingle, this,
+            ros::TransportHints().tcpNoDelay(true));
+        ROS_WARN_STREAM("Point cloud fusion disabled; passing through lidar[0]: "
+                        << config_.lidar_topics.front());
+        return;
+    }
+
     subscribers_.reserve(config_.lidar_num);
     for (const auto& topic : config_.lidar_topics) {
         subscribers_.push_back(
@@ -182,6 +195,10 @@ void MultiLidarFusion::callback3(const CloudConstPtr& cloud1,
                                  const CloudConstPtr& cloud2,
                                  const CloudConstPtr& cloud3) {
     processClouds({cloud1, cloud2, cloud3});
+}
+
+void MultiLidarFusion::callbackSingle(const CloudConstPtr& cloud) {
+    processClouds({cloud});
 }
 
 void MultiLidarFusion::processClouds(
