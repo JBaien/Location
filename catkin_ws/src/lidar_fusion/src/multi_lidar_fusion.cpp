@@ -203,10 +203,11 @@ void MultiLidarFusion::processClouds(
 
         std::vector<PointCloud::Ptr> transformed_clouds;
         transformed_clouds.reserve(clouds.size());
-        for (const auto& cloud : clouds) {
+        for (size_t i = 0; i < clouds.size(); ++i) {
             PointCloud::Ptr transformed(new PointCloud);
-            if (!transformCloudToOutputFrame(cloud, output_stamp,
-                                             *transformed)) {
+            if (!transformCloudToOutputFrame(
+                    clouds[i], output_stamp, static_cast<std::uint8_t>(i),
+                    *transformed)) {
                 ++diagnostics_.dropped_tf;
                 return;
             }
@@ -293,7 +294,7 @@ bool MultiLidarFusion::hasRequiredFields(const CloudMsg& cloud) const {
 
 bool MultiLidarFusion::transformCloudToOutputFrame(
     const CloudConstPtr& cloud, const ros::Time& output_stamp,
-    PointCloud& transformed_cloud) {
+    std::uint8_t lidar_id, PointCloud& transformed_cloud) {
     geometry_msgs::TransformStamped transform;
     try {
         if (!tf_buffer_.canTransform(config_.output_frame_id,
@@ -315,7 +316,7 @@ bool MultiLidarFusion::transformCloudToOutputFrame(
         return false;
     }
 
-    PointCloud input_cloud;
+    pcl::PointCloud<PointXYZIRT> input_cloud;
     try {
         pcl::fromROSMsg(*cloud, input_cloud);
     } catch (const std::exception& e) {
@@ -337,18 +338,34 @@ bool MultiLidarFusion::transformCloudToOutputFrame(
         config_.normalize_point_time
             ? static_cast<float>((cloud->header.stamp - output_stamp).toSec())
             : 0.0f;
+    constexpr float kTwoPi = 6.28318530717958647692f;
 
     for (size_t i = 0; i < input_cloud.points.size(); ++i) {
         const auto& src = input_cloud.points[i];
         auto& dst = transformed_cloud.points[i];
+
+        // Retain source-sensor polar coordinates before applying TF. Once XYZ
+        // is in base_link, atan2(x,y) no longer represents the scan column for
+        // an offset/rotated lidar. Source azimuth is therefore the only stable
+        // key for joining adjacent rings in the browser.
+        float source_azimuth = std::atan2(src.y, src.x);
+        if (source_azimuth < 0.0f) {
+            source_azimuth += kTwoPi;
+        }
+        const float source_range =
+            std::sqrt(src.x * src.x + src.y * src.y + src.z * src.z);
+
         const Eigen::Vector3f p(src.x, src.y, src.z);
         const Eigen::Vector3f q = transform_eigen.cast<float>() * p;
         dst.x = q.x();
         dst.y = q.y();
         dst.z = q.z();
         dst.intensity = src.intensity;
-        dst.ring = src.ring;
         dst.time = src.time + time_offset;
+        dst.azimuth = std::isfinite(source_azimuth) ? source_azimuth : 0.0f;
+        dst.range = std::isfinite(source_range) ? source_range : 0.0f;
+        dst.ring = src.ring;
+        dst.lidar_id = lidar_id;
     }
 
     return true;

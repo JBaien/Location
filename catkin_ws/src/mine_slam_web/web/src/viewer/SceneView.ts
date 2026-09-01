@@ -1,11 +1,25 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import type { CloudDeliveryMeta } from './BinaryCloudClient';
 import { ColorMode } from './ColorMap';
-import { LayerDebug, ParsedCloud, PointCloudLayer } from './PointCloudLayer';
+import type { ParsedCloud } from './CloudTypes';
+import type { ParsedLocalTsdfMesh } from './LocalTsdfMeshClient';
+import {
+  LocalTsdfMeshLayer,
+  type LocalTsdfMeshDebug
+} from './LocalTsdfMeshLayer';
+import { LayerDebug, PointCloudLayer } from './PointCloudLayer';
 import { PathLayer } from './PathLayer';
+import {
+  ScanMeshLayer,
+  type MeshFrameMetrics,
+  type ScanMeshDebug
+} from './ScanMeshLayer';
 
 export interface LayerState {
   current: boolean;
+  mesh: boolean;
+  tsdfMesh: boolean;
   stable: boolean;
   path: boolean;
   reflector: boolean;
@@ -15,16 +29,22 @@ export interface LayerState {
 export interface RenderStats {
   fps: number;
   frameMs: number;
+  frameMeanMs: number;
+  frameP95Ms: number;
 }
 
 export interface SceneDebug {
   current: LayerDebug;
+  mesh: ScanMeshDebug;
+  tsdf_mesh: LocalTsdfMeshDebug;
   stable: LayerDebug;
   path_position_count: number;
 }
 
 export class SceneView {
   readonly currentLayer = new PointCloudLayer('current_cloud');
+  readonly currentMeshLayer = new ScanMeshLayer();
+  readonly localTsdfMeshLayer = new LocalTsdfMeshLayer();
   readonly stableLayer = new PointCloudLayer('stable_map');
   readonly pathLayer = new PathLayer();
 
@@ -37,13 +57,23 @@ export class SceneView {
   private resizeObserver: ResizeObserver;
   private animationFrame = 0;
   private colorMode: ColorMode = 'height';
-  private layerState: LayerState = { current: true, stable: true, path: true, reflector: true, grid: true };
+  private layerState: LayerState = {
+    current: true,
+    mesh: false,
+    tsdfMesh: true,
+    stable: false,
+    path: true,
+    reflector: true,
+    grid: true
+  };
   private statsCallback: ((stats: RenderStats) => void) | null = null;
   private lastFrameTime = performance.now();
   private statsWindowStart = performance.now();
   private statsFrames = 0;
+  private statsFrameDurations: number[] = [];
   private autoFitStableDone = false;
   private autoFitCurrentDone = false;
+  private autoFitTsdfDone = false;
 
   constructor(private readonly host: HTMLElement) {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -85,6 +115,8 @@ export class SceneView {
     this.scene.add(this.grid);
     this.axisGuide = this.createAxisGuide();
     this.scene.add(this.axisGuide);
+    this.scene.add(this.localTsdfMeshLayer.mesh);
+    this.scene.add(this.currentMeshLayer.mesh);
     this.scene.add(this.currentLayer.points);
     this.scene.add(this.stableLayer.points);
     this.scene.add(this.pathLayer.line);
@@ -99,24 +131,56 @@ export class SceneView {
   dispose(): void {
     window.cancelAnimationFrame(this.animationFrame);
     this.resizeObserver.disconnect();
+    this.currentMeshLayer.dispose();
+    this.localTsdfMeshLayer.dispose();
     this.renderer.dispose();
     this.host.innerHTML = '';
   }
 
-  updateCloud(cloud: ParsedCloud): void {
+  updateCloud(
+    cloud: ParsedCloud,
+    delivery?: CloudDeliveryMeta
+  ): MeshFrameMetrics | null {
     if (cloud.cloudType === 1) {
       this.currentLayer.updateCloud(cloud, this.colorMode, this.layerState.reflector, this.layerState.current);
-      if (!this.autoFitCurrentDone && !this.autoFitStableDone && cloud.pointCount > 0) {
+      const meshFrame = this.currentMeshLayer.updateCloud(
+        cloud,
+        this.colorMode,
+        this.layerState.reflector,
+        this.layerState.mesh,
+        delivery
+      );
+      if ((this.layerState.current || this.layerState.mesh) && !this.autoFitCurrentDone && !this.autoFitStableDone && !this.autoFitTsdfDone && cloud.pointCount > 0) {
         this.fitCurrent();
         this.autoFitCurrentDone = true;
       }
+      return meshFrame;
     } else if (cloud.cloudType === 2) {
       this.stableLayer.updateCloud(cloud, this.colorMode, this.layerState.reflector, this.layerState.stable);
-      if (!this.autoFitStableDone && cloud.pointCount > 0) {
+      if (this.layerState.stable && !this.autoFitStableDone && !this.autoFitTsdfDone && cloud.pointCount > 0) {
         this.fitStable();
         this.autoFitStableDone = true;
       }
     }
+    return null;
+  }
+
+  updateLocalTsdfMesh(mesh: ParsedLocalTsdfMesh): void {
+    this.localTsdfMeshLayer.updateMesh(mesh);
+    if (
+      !this.autoFitTsdfDone &&
+      this.layerState.tsdfMesh &&
+      !this.autoFitCurrentDone &&
+      !this.autoFitStableDone &&
+      mesh.vertexCount > 0
+    ) {
+      this.fitBox(this.localTsdfMeshLayer.getBoundingBox());
+      this.autoFitTsdfDone = true;
+    }
+  }
+
+  clearLocalTsdfMesh(): void {
+    this.localTsdfMeshLayer.clear();
   }
 
   setSourceTopics(currentTopic?: string, stableTopic?: string): void {
@@ -131,6 +195,8 @@ export class SceneView {
   setLayers(layers: LayerState): void {
     this.layerState = { ...layers };
     this.currentLayer.setVisible(layers.current);
+    this.currentMeshLayer.setVisible(layers.mesh);
+    this.localTsdfMeshLayer.setVisible(layers.tsdfMesh);
     this.stableLayer.setVisible(layers.stable);
     this.pathLayer.setVisible(layers.path);
     this.grid.visible = layers.grid;
@@ -145,6 +211,10 @@ export class SceneView {
   setPointSize(size: number): void {
     this.currentLayer.setPointSize(size);
     this.stableLayer.setPointSize(size);
+  }
+
+  setMeshOpacity(opacity: number): void {
+    this.currentMeshLayer.setOpacity(opacity);
   }
 
   onStats(callback: (stats: RenderStats) => void): void {
@@ -162,7 +232,17 @@ export class SceneView {
   fitAll(): void {
     const box = new THREE.Box3();
     let hasBox = false;
-    for (const next of [this.currentLayer.getBoundingBox(), this.stableLayer.getBoundingBox(), this.pathLayer.getBoundingBox()]) {
+    const tsdfBox = this.layerState.tsdfMesh
+      ? this.localTsdfMeshLayer.getBoundingBox()
+      : null;
+    const currentBox = this.layerState.current || this.layerState.mesh
+      ? this.currentLayer.getBoundingBox()
+      : null;
+    const stableBox = this.layerState.stable
+      ? this.stableLayer.getBoundingBox()
+      : null;
+    const pathBox = this.layerState.path ? this.pathLayer.getBoundingBox() : null;
+    for (const next of [currentBox, tsdfBox, stableBox, pathBox]) {
       if (!next || next.isEmpty()) continue;
       if (!hasBox) {
         box.copy(next);
@@ -193,6 +273,8 @@ export class SceneView {
   getDebug(): SceneDebug {
     return {
       current: this.currentLayer.getDebug(),
+      mesh: this.currentMeshLayer.getDebug(),
+      tsdf_mesh: this.localTsdfMeshLayer.getDebug(),
       stable: this.stableLayer.getDebug(),
       path_position_count: this.pathLayer.getPointCount()
     };
@@ -200,6 +282,7 @@ export class SceneView {
 
   private recolor(): void {
     this.currentLayer.recolor(this.colorMode, this.layerState.reflector);
+    this.currentMeshLayer.recolor(this.colorMode, this.layerState.reflector);
     this.stableLayer.recolor(this.colorMode, this.layerState.reflector);
   }
 
@@ -313,7 +396,17 @@ export class SceneView {
   private setCameraView(direction: THREE.Vector3): void {
     const box = new THREE.Box3();
     let hasBox = false;
-    for (const next of [this.stableLayer.getBoundingBox(), this.currentLayer.getBoundingBox(), this.pathLayer.getBoundingBox()]) {
+    const stableBox = this.layerState.stable
+      ? this.stableLayer.getBoundingBox()
+      : null;
+    const tsdfBox = this.layerState.tsdfMesh
+      ? this.localTsdfMeshLayer.getBoundingBox()
+      : null;
+    const currentBox = this.layerState.current || this.layerState.mesh
+      ? this.currentLayer.getBoundingBox()
+      : null;
+    const pathBox = this.layerState.path ? this.pathLayer.getBoundingBox() : null;
+    for (const next of [stableBox, tsdfBox, currentBox, pathBox]) {
       if (!next || next.isEmpty()) continue;
       if (!hasBox) {
         box.copy(next);
@@ -349,10 +442,27 @@ export class SceneView {
     const frameMs = now - this.lastFrameTime;
     this.lastFrameTime = now;
     this.statsFrames += 1;
+    this.statsFrameDurations.push(frameMs);
     const windowMs = now - this.statsWindowStart;
-    if (this.statsCallback && windowMs >= 1000) {
-      this.statsCallback({ fps: (this.statsFrames * 1000) / windowMs, frameMs });
+    if (windowMs >= 1000) {
+      const sortedDurations = [...this.statsFrameDurations].sort(
+        (left, right) => left - right
+      );
+      const frameMeanMs =
+        this.statsFrameDurations.reduce((total, value) => total + value, 0) /
+        Math.max(1, this.statsFrameDurations.length);
+      const p95Index = Math.min(
+        sortedDurations.length - 1,
+        Math.floor(Math.max(0, sortedDurations.length - 1) * 0.95)
+      );
+      this.statsCallback?.({
+          fps: (this.statsFrames * 1000) / windowMs,
+          frameMs,
+          frameMeanMs,
+          frameP95Ms: sortedDurations[p95Index] ?? 0
+        });
       this.statsFrames = 0;
+      this.statsFrameDurations = [];
       this.statsWindowStart = now;
     }
     this.controls.update();

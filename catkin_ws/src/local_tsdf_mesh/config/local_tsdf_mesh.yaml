@@ -1,0 +1,134 @@
+# Local rolling surface reconstruction. Distances are metres and angles are
+# degrees unless a key explicitly says otherwise.
+input_topic: /points_raw
+mesh_topic: /local_tsdf_mesh/mesh
+status_topic: /local_tsdf_mesh/status
+expected_input_frame: velodyne
+
+registration:
+  voxel_size: 0.20
+  min_range: 0.50
+  max_range: 30.0
+  max_points: 30000
+  min_points: 200
+  maximum_iterations: 40
+  correspondence_randomness: 10
+  max_correspondence_distance: 0.60
+  transformation_epsilon: 0.00001
+  rotation_epsilon: 0.002
+  fitness_epsilon: 0.00001
+  max_fitness_score: 0.08
+  inlier_distance: 0.30
+  min_inlier_ratio: 0.35
+  max_translation_m: 2.0
+  max_rotation_deg: 15.0
+
+  # Long, repetitive tunnels can make ICP report an excellent score at a false
+  # translation of any size. With no external motion prior available in this
+  # first version, the safe default refuses every pure-ICP motion bootstrap and
+  # rebuilds a current-frame-only TSDF without running GICP. Set true only after
+  # validating the bag-specific motion observability.
+  allow_unverified_bootstrap: false
+  allow_near_identity_bootstrap: false
+  safe_single_frame_fallback: true
+  minimum_bootstrap_translation_m: 0.10
+  minimum_bootstrap_rotation_deg: 0.50
+  max_prediction_translation_error_m: 0.75
+  max_prediction_rotation_error_deg: 10.0
+  failures_before_reset: 3
+
+tsdf:
+  # Keep true for the layered TSDF+strip experiment. Direct-strip-only mode
+  # sets this false together with lateral_support/build_surface_rays=false.
+  integrate_measured_rays: true
+  # Tunnel-bag A/B showed that concurrent strip construction competes for
+  # memory bandwidth and increases callback P95, so keep the two bounded stages
+  # serial.  The 0.25 m TSDF covers the dense near field; evidence-gated strips
+  # below preserve the farther live view without enlarging the TSDF volume.
+  parallel_support_build: false
+  voxel_size: 0.25
+  truncation_distance: 0.75
+  min_range: 0.50
+  max_range: 10.0
+  max_weight_per_voxel_per_frame: 4.0
+  window_duration_sec: 1.50
+  max_window_frames: 15
+  max_points_per_frame: 18000
+  max_voxels: 500000
+
+  # Build only scan strips supported by adjacent physical rings. Long spans
+  # additionally require a third coplanar ring; source ring/azimuth fields are
+  # mandatory. The two output forms below can be A/B tested independently.
+  lateral_support:
+    enabled: true
+    min_range: 10.0
+    max_range: 30.0
+    max_surface_cells: 36000
+    max_candidate_samples: 300000
+    surface_spacing_voxels: 0.75
+    integration_band_voxels: 1.50
+    strong_ray_weight: 0.50
+    verified_long_ray_weight: 0.25
+    maximum_weight_per_voxel: 1.0
+    # Experimental A/B: publish the directly indexed supported strips while
+    # keeping the base TSDF bit-identical to measured-ray integration.
+    build_surface_rays: false
+    build_indexed_mesh: true
+    max_mesh_vertices: 150000
+    max_mesh_triangles: 150000
+    # 1.76 * 0.25 m = 0.44 m, leaving margin below the 0.45 m
+    # cross-region safety gate while avoiding direct-mesh budget fallback.
+    maximum_mesh_edge_voxels: 1.76
+    mesh_weld_tolerance_voxels: 0.0001
+    minimum_ring_angle_deg: 0.20
+    maximum_ring_angle_deg: 5.0
+    maximum_ring_order_direction_angle_deg: 45.0
+    minimum_match_angle_deg: 0.12
+    maximum_match_angle_deg: 0.30
+    match_step_factor: 1.50
+    minimum_gap_angle_deg: 0.35
+    maximum_gap_angle_deg: 0.65
+    gap_step_factor: 2.60
+    maximum_along_log_range_delta: 0.05
+    maximum_along_edge_base_m: 0.30
+    maximum_along_edge_range_ratio: 0.04
+    strong_cross_log_range_delta: 0.025
+    strong_cross_edge_base_m: 0.60
+    strong_cross_edge_range_ratio: 0.055
+    maximum_cross_log_range_delta: 0.25
+    maximum_cross_edge_base_m: 1.00
+    maximum_cross_edge_range_ratio: 0.25
+    maximum_cross_edge_absolute_m: 2.50
+    maximum_quad_normal_angle_deg: 25.0
+    maximum_neighbor_normal_angle_deg: 15.0
+    maximum_opposite_edge_length_ratio: 1.80
+    maximum_planarity_base_m: 0.15
+    maximum_planarity_edge_ratio: 0.08
+    maximum_neighbor_plane_edge_ratio: 0.05
+    maximum_run_cross_edge_ratio: 1.60
+    minimum_run_quads: 2
+
+mesh:
+  minimum_weight: 1.0
+  iso_level: 0.0
+  max_triangles: 200000
+  # The read-only support validator overlaps base cleanup without changing the
+  # resulting mesh. Tunnel-bag A/B reduced validation time with this enabled.
+  parallel_support_validation: true
+  # Zero publishes every processed input frame. A body-local Mesh must not be
+  # held across vehicle motion unless a timestamped pose can reproject it.
+  publish_rate_hz: 0.0
+  color_r: 0.92
+  color_g: 0.58
+  color_b: 0.16
+  color_a: 0.72
+
+sensors:
+  # Each x/y/z triple is the origin of lidar_id N in the incoming PointCloud2
+  # frame. These defaults match the current Tunnel bag fusion frame `velodyne`:
+  # center lidar id 0 and right lidar id 1. Replace them whenever
+  # /multi_lidar_fusion/output_frame_id or the calibrated extrinsics change.
+  origins_xyz: [0.0, 0.0, 0.0,
+                0.323744, -0.00124153, -0.200876]
+  require_configured_origin: true
+  require_lidar_id: true

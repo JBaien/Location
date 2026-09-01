@@ -1,16 +1,8 @@
 import * as THREE from 'three';
 import { ColorMode, colorForPoint } from './ColorMap';
 
-export interface ParsedCloud {
-  cloudType: number;
-  stampNs: bigint;
-  pointCount: number;
-  fieldsMask: number;
-  positions: Float32Array;
-  intensities: Float32Array;
-  lidarIds: Uint8Array;
-  classIds: Uint8Array;
-}
+import type { ParsedCloud } from './CloudTypes';
+export type { ParsedCloud } from './CloudTypes';
 
 export interface LayerDebug {
   layer_id: string;
@@ -38,6 +30,7 @@ export class PointCloudLayer {
   constructor(private readonly layerId = 'cloud_layer', private sourceTopic = 'unknown') {
     this.points = new THREE.Points(this.geometry, this.material);
     this.points.frustumCulled = false;
+    this.points.renderOrder = 2;
     this.debug = {
       layer_id: this.layerId,
       source_topic: this.sourceTopic,

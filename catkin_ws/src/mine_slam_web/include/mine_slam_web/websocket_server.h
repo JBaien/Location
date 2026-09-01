@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -17,6 +18,9 @@ class WebSocketSession;
 
 class WebSocketServer {
  public:
+  using Payload = std::shared_ptr<const std::vector<std::uint8_t>>;
+  using InitialPayloadProvider = std::function<std::vector<Payload>()>;
+
   WebSocketServer(std::uint16_t port, bool binary_messages);
   ~WebSocketServer();
 
@@ -28,7 +32,9 @@ class WebSocketServer {
 
   std::size_t clientCount() const;
   void setClientConnectedCallback(std::function<void()> callback);
-  void broadcast(std::shared_ptr<const std::vector<std::uint8_t>> payload);
+  void setInitialPayloadProvider(InitialPayloadProvider provider);
+  void configureLatestOnlyQueue(std::size_t max_queued_bytes);
+  void broadcast(Payload payload);
   void broadcastText(const std::string& payload);
 
  private:
@@ -42,6 +48,9 @@ class WebSocketServer {
   std::vector<std::weak_ptr<WebSocketSession>> sessions_;
   std::mutex callback_mutex_;
   std::function<void()> client_connected_callback_;
+  InitialPayloadProvider initial_payload_provider_;
+  bool latest_only_queue_ = false;
+  std::size_t max_queued_bytes_ = 0;
   boost::asio::io_service io_service_;
   std::unique_ptr<boost::asio::ip::tcp::acceptor> acceptor_;
   std::thread io_thread_;
@@ -49,4 +58,3 @@ class WebSocketServer {
 };
 
 }  // namespace mine_slam_web
-

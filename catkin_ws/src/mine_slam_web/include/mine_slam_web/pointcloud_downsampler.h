@@ -10,7 +10,7 @@ class VoxelLimiter {
  public:
   VoxelLimiter(double voxel_size_m, std::size_t max_points);
 
-  bool accept(float x, float y, float z);
+  bool accept(float x, float y, float z, std::uint32_t group_id = 0);
   std::size_t acceptedCount() const;
 
  private:

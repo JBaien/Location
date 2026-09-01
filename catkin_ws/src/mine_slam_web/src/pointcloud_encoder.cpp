@@ -28,7 +28,8 @@ T readRaw(const std::uint8_t* ptr) {
   return value;
 }
 
-float readNumericAsFloat(const std::uint8_t* ptr, const sensor_msgs::PointField& field) {
+float readNumericAsFloat(const std::uint8_t* ptr,
+                         const sensor_msgs::PointField& field) {
   switch (field.datatype) {
     case sensor_msgs::PointField::INT8:
       return static_cast<float>(readRaw<std::int8_t>(ptr));
@@ -51,21 +52,35 @@ float readNumericAsFloat(const std::uint8_t* ptr, const sensor_msgs::PointField&
   }
 }
 
-std::uint8_t readNumericAsU8(const std::uint8_t* ptr, const sensor_msgs::PointField& field) {
+std::uint8_t readNumericAsU8(const std::uint8_t* ptr,
+                             const sensor_msgs::PointField& field) {
   const float value = readNumericAsFloat(ptr, field);
   if (!std::isfinite(value)) {
     return 0;
   }
-  return static_cast<std::uint8_t>(std::max(0.0f, std::min(255.0f, value)));
+  return static_cast<std::uint8_t>(
+      std::max(0.0f, std::min(255.0f, value)));
 }
 
-void appendBytes(std::vector<std::uint8_t>& dst, const void* src, std::size_t size) {
+std::uint16_t readNumericAsU16(const std::uint8_t* ptr,
+                               const sensor_msgs::PointField& field) {
+  const float value = readNumericAsFloat(ptr, field);
+  if (!std::isfinite(value)) {
+    return 0;
+  }
+  return static_cast<std::uint16_t>(
+      std::max(0.0f, std::min(65535.0f, value)));
+}
+
+void appendBytes(std::vector<std::uint8_t>& dst, const void* src,
+                 std::size_t size) {
   const auto* begin = static_cast<const std::uint8_t*>(src);
   dst.insert(dst.end(), begin, begin + size);
 }
 
 std::uint64_t stampToNs(const ros::Time& stamp) {
-  return static_cast<std::uint64_t>(stamp.sec) * 1000000000ULL + static_cast<std::uint64_t>(stamp.nsec);
+  return static_cast<std::uint64_t>(stamp.sec) * 1000000000ULL +
+         static_cast<std::uint64_t>(stamp.nsec);
 }
 
 }  // namespace
@@ -73,20 +88,23 @@ std::uint64_t stampToNs(const ros::Time& stamp) {
 CloudEncodeResult encodePointCloud2(const sensor_msgs::PointCloud2& cloud,
                                     const CloudEncodeOptions& options) {
   CloudEncodeResult result;
-  result.raw_points = static_cast<std::size_t>(cloud.width) * static_cast<std::size_t>(cloud.height);
+  result.raw_points = static_cast<std::size_t>(cloud.width) *
+                      static_cast<std::size_t>(cloud.height);
 
   const auto* x_field = findField(cloud, "x");
   const auto* y_field = findField(cloud, "y");
   const auto* z_field = findField(cloud, "z");
-  if (x_field == nullptr || y_field == nullptr || z_field == nullptr || cloud.point_step == 0) {
+  if (x_field == nullptr || y_field == nullptr || z_field == nullptr ||
+      cloud.point_step == 0) {
     return result;
   }
 
   const auto* intensity_field = findField(cloud, "intensity");
   const auto* lidar_field = findField(cloud, "lidar_id");
-  if (lidar_field == nullptr) {
-    lidar_field = findField(cloud, "ring");
-  }
+  const auto* ring_field = findField(cloud, "ring");
+  const auto* time_field = findField(cloud, "time");
+  const auto* azimuth_field = findField(cloud, "azimuth");
+  const auto* range_field = findField(cloud, "range");
 
   result.fields_mask = FIELD_CLASS_ID;
   if (intensity_field != nullptr) {
@@ -95,20 +113,33 @@ CloudEncodeResult encodePointCloud2(const sensor_msgs::PointCloud2& cloud,
   if (lidar_field != nullptr) {
     result.fields_mask |= FIELD_LIDAR_ID;
   }
-  result.fields_mask |= FIELD_RGB;
+  if (ring_field != nullptr) {
+    result.fields_mask |= FIELD_RING;
+  }
+  if (time_field != nullptr) {
+    result.fields_mask |= FIELD_TIME;
+  }
+  if (azimuth_field != nullptr) {
+    result.fields_mask |= FIELD_AZIMUTH;
+  }
+  if (range_field != nullptr) {
+    result.fields_mask |= FIELD_RANGE;
+  }
 
   std::vector<WebPoint> points;
   points.reserve(std::min<std::size_t>(result.raw_points, options.max_points));
   VoxelLimiter limiter(options.voxel_size_m, options.max_points);
 
-  const std::uint8_t base_class = options.cloud_type == CLOUD_STABLE ? 1 : 2;
+  const std::uint8_t base_class =
+      options.cloud_type == CLOUD_STABLE ? 1 : 2;
   const std::size_t row_step = cloud.row_step;
   const std::size_t point_step = cloud.point_step;
 
   for (std::uint32_t row = 0; row < cloud.height; ++row) {
     const std::size_t row_offset = static_cast<std::size_t>(row) * row_step;
     for (std::uint32_t col = 0; col < cloud.width; ++col) {
-      const std::size_t offset = row_offset + static_cast<std::size_t>(col) * point_step;
+      const std::size_t offset =
+          row_offset + static_cast<std::size_t>(col) * point_step;
       if (offset + point_step > cloud.data.size()) {
         break;
       }
@@ -117,9 +148,41 @@ CloudEncodeResult encodePointCloud2(const sensor_msgs::PointCloud2& cloud,
       point.x = readNumericAsFloat(ptr + x_field->offset, *x_field);
       point.y = readNumericAsFloat(ptr + y_field->offset, *y_field);
       point.z = readNumericAsFloat(ptr + z_field->offset, *z_field);
-      if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+      if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+          !std::isfinite(point.z)) {
         continue;
       }
+
+      // Topology fields are source-lidar values and must be read before any
+      // optional display-only map transform changes XYZ.
+      point.intensity =
+          intensity_field != nullptr
+              ? readNumericAsFloat(ptr + intensity_field->offset,
+                                   *intensity_field)
+              : 0.0f;
+      point.time = time_field != nullptr
+                       ? readNumericAsFloat(ptr + time_field->offset,
+                                            *time_field)
+                       : 0.0f;
+      point.azimuth =
+          azimuth_field != nullptr
+              ? readNumericAsFloat(ptr + azimuth_field->offset, *azimuth_field)
+              : 0.0f;
+      point.range =
+          range_field != nullptr
+              ? readNumericAsFloat(ptr + range_field->offset, *range_field)
+              : 0.0f;
+      point.ring = ring_field != nullptr
+                       ? readNumericAsU16(ptr + ring_field->offset, *ring_field)
+                       : 0;
+      point.lidar_id =
+          lidar_field != nullptr
+              ? readNumericAsU8(ptr + lidar_field->offset, *lidar_field)
+              : 0;
+      point.class_id =
+          point.intensity >= options.reflector_intensity_threshold ? 3
+                                                                   : base_class;
+
       if (options.transform_to_map) {
         const double raw_x = point.x;
         const double raw_y = point.y;
@@ -137,16 +200,17 @@ CloudEncodeResult encodePointCloud2(const sensor_msgs::PointCloud2& cloud,
                                      options.rotation[8] * raw_z +
                                      options.translation[2]);
       }
-      if (!limiter.accept(point.x, point.y, point.z)) {
+
+      std::uint32_t topology_group = 0;
+      if (options.cloud_type == CLOUD_CURRENT && lidar_field != nullptr &&
+          ring_field != nullptr) {
+        topology_group =
+            (static_cast<std::uint32_t>(point.lidar_id) << 16U) |
+            static_cast<std::uint32_t>(point.ring);
+      }
+      if (!limiter.accept(point.x, point.y, point.z, topology_group)) {
         continue;
       }
-
-      point.intensity = intensity_field != nullptr ? readNumericAsFloat(ptr + intensity_field->offset, *intensity_field) : 0.0f;
-      point.lidar_id = lidar_field != nullptr ? readNumericAsU8(ptr + lidar_field->offset, *lidar_field) : 0;
-      point.class_id = point.intensity >= options.reflector_intensity_threshold ? 3 : base_class;
-      point.r = 0;
-      point.g = 0;
-      point.b = 0;
       points.push_back(point);
     }
   }
@@ -158,10 +222,13 @@ CloudEncodeResult encodePointCloud2(const sensor_msgs::PointCloud2& cloud,
   header.version = kCloudPacketVersion;
   header.cloud_type = static_cast<std::uint16_t>(options.cloud_type);
   header.stamp_ns = stampToNs(cloud.header.stamp);
-  header.point_count = static_cast<std::uint32_t>(std::min<std::size_t>(points.size(), std::numeric_limits<std::uint32_t>::max()));
+  header.point_count = static_cast<std::uint32_t>(
+      std::min<std::size_t>(points.size(),
+                            std::numeric_limits<std::uint32_t>::max()));
   header.fields_mask = result.fields_mask;
 
-  result.buffer.reserve(sizeof(CloudPacketHeader) + points.size() * sizeof(WebPoint));
+  result.buffer.reserve(sizeof(CloudPacketHeader) +
+                        points.size() * sizeof(WebPoint));
   appendBytes(result.buffer, &header, sizeof(header));
   if (!points.empty()) {
     appendBytes(result.buffer, points.data(), points.size() * sizeof(WebPoint));

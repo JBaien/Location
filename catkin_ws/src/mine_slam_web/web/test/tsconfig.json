@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "isolatedModules": false,
+    "types": []
+  },
+  "include": [
+    "./node-shims.d.ts",
+    "./StableScanMeshBuilder.test.ts",
+    "./LocalTsdfMeshClient.test.ts",
+    "../src/viewer/CloudTypes.ts",
+    "../src/viewer/LocalTsdfMeshClient.ts",
+    "../src/viewer/StableScanMeshBuilder.ts"
+  ]
+}

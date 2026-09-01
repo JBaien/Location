@@ -21,7 +21,8 @@ VoxelLimiter::VoxelLimiter(double voxel_size_m, std::size_t max_points)
   }
 }
 
-bool VoxelLimiter::accept(float x, float y, float z) {
+bool VoxelLimiter::accept(float x, float y, float z,
+                          std::uint32_t group_id) {
   if (max_points_ > 0 && accepted_count_ >= max_points_) {
     return false;
   }
@@ -34,7 +35,9 @@ bool VoxelLimiter::accept(float x, float y, float z) {
   const std::uint64_t ix = static_cast<std::uint64_t>(voxelIndex(x));
   const std::uint64_t iy = static_cast<std::uint64_t>(voxelIndex(y));
   const std::uint64_t iz = static_cast<std::uint64_t>(voxelIndex(z));
-  const std::uint64_t key = splitmix64(ix) ^ (splitmix64(iy) << 1U) ^ (splitmix64(iz) << 2U);
+  const std::uint64_t key = splitmix64(ix) ^ (splitmix64(iy) << 1U) ^
+                            (splitmix64(iz) << 2U) ^
+                            (splitmix64(group_id) << 3U);
   const auto inserted = occupied_.insert(key).second;
   if (!inserted) {
     return false;

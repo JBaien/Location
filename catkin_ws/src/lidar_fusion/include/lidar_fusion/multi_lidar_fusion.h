@@ -2,6 +2,7 @@
 #define MULTI_LIDAR_FUSION_H
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -15,6 +16,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include "lidar_fusion/lidar_fusion.h"
+#include "lidar_fusion/multi_lidar_point_type.h"
 
 namespace lidar_fusion {
 
@@ -26,7 +28,7 @@ public:
 private:
     using CloudMsg = sensor_msgs::PointCloud2;
     using CloudConstPtr = sensor_msgs::PointCloud2::ConstPtr;
-    using PointCloud = pcl::PointCloud<PointXYZIRT>;
+    using PointCloud = pcl::PointCloud<PointXYZIRTL>;
     using SyncPolicy2 =
         message_filters::sync_policies::ApproximateTime<CloudMsg, CloudMsg>;
     using SyncPolicy3 =
@@ -89,6 +91,7 @@ private:
     bool hasRequiredFields(const CloudMsg& cloud) const;
     bool transformCloudToOutputFrame(const CloudConstPtr& cloud,
                                      const ros::Time& output_stamp,
+                                     std::uint8_t lidar_id,
                                      PointCloud& transformed_cloud);
     bool fuseTransformedClouds(const std::vector<PointCloud::Ptr>& clouds,
                                const ros::Time& output_stamp,

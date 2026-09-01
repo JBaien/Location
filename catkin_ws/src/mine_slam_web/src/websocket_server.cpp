@@ -5,6 +5,7 @@
 #include <cctype>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 #include <openssl/sha.h>
@@ -110,11 +111,16 @@ std::shared_ptr<const std::vector<std::uint8_t>> makeFrame(const std::vector<std
 class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
  public:
   WebSocketSession(tcp::socket socket, boost::asio::io_service& io_service, bool binary_messages,
-                   std::function<void()> accepted_callback)
+                   bool latest_only_queue, std::size_t max_queued_bytes)
       : socket_(std::move(socket)),
         strand_(io_service),
         binary_messages_(binary_messages),
-        accepted_callback_(std::move(accepted_callback)) {}
+        latest_only_queue_(latest_only_queue),
+        max_queued_bytes_(max_queued_bytes) {}
+
+  void setAcceptedCallback(std::function<void()> accepted_callback) {
+    accepted_callback_ = std::move(accepted_callback);
+  }
 
   void start() {
     boost::asio::async_read_until(socket_, read_buffer_, "\r\n\r\n",
@@ -129,9 +135,31 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
   }
 
   void send(std::shared_ptr<const std::vector<std::uint8_t>> payload) {
-    const auto frame = makeFrame(*payload, binary_messages_);
-    strand_.post([self = shared_from_this(), frame]() {
+    if (!payload || closed()) {
+      return;
+    }
+    strand_.post([self = shared_from_this(), payload = std::move(payload)]() {
+      if (self->closed()) {
+        return;
+      }
       const bool writing = !self->write_queue_.empty();
+      // Keep the frame currently owned by async_write, but coalesce every
+      // not-yet-written snapshot down to the newest one.
+      if (self->latest_only_queue_ && self->write_queue_.size() > 1U) {
+        for (std::size_t index = 1; index < self->write_queue_.size(); ++index) {
+          self->queued_bytes_ -= self->write_queue_[index]->size();
+        }
+        self->write_queue_.erase(self->write_queue_.begin() + 1,
+                                 self->write_queue_.end());
+      }
+      const auto frame = makeFrame(*payload, self->binary_messages_);
+      if (self->max_queued_bytes_ > 0 &&
+          (frame->size() > self->max_queued_bytes_ ||
+           self->queued_bytes_ > self->max_queued_bytes_ - frame->size())) {
+        self->closeForBackpressure();
+        return;
+      }
+      self->queued_bytes_ += frame->size();
       self->write_queue_.push_back(std::move(frame));
       if (!writing) {
         self->doWrite();
@@ -200,20 +228,36 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
                                                                       std::size_t) {
                                if (ec) {
                                  self->closed_.store(true);
+                                 self->queued_bytes_ = 0;
                                  self->write_queue_.clear();
                                  return;
                                }
+                               self->queued_bytes_ -= self->write_queue_.front()->size();
                                self->write_queue_.erase(self->write_queue_.begin());
                                self->doWrite();
                              }));
   }
 
+  void closeForBackpressure() {
+    closed_.store(true);
+    if (write_queue_.size() > 1U) {
+      write_queue_.erase(write_queue_.begin() + 1, write_queue_.end());
+    }
+    queued_bytes_ = write_queue_.empty() ? 0 : write_queue_.front()->size();
+    boost::system::error_code ec;
+    socket_.shutdown(tcp::socket::shutdown_both, ec);
+    socket_.close(ec);
+  }
+
   tcp::socket socket_;
   boost::asio::io_service::strand strand_;
   bool binary_messages_;
+  bool latest_only_queue_;
+  std::size_t max_queued_bytes_;
   boost::asio::streambuf read_buffer_;
   std::array<std::uint8_t, 1024> read_scratch_{};
   std::vector<std::shared_ptr<const std::vector<std::uint8_t>>> write_queue_;
+  std::size_t queued_bytes_ = 0;
   std::atomic<bool> closed_{false};
   std::function<void()> accepted_callback_;
 };
@@ -286,7 +330,21 @@ void WebSocketServer::setClientConnectedCallback(std::function<void()> callback)
   client_connected_callback_ = std::move(callback);
 }
 
-void WebSocketServer::broadcast(std::shared_ptr<const std::vector<std::uint8_t>> payload) {
+void WebSocketServer::setInitialPayloadProvider(InitialPayloadProvider provider) {
+  std::lock_guard<std::mutex> lock(callback_mutex_);
+  initial_payload_provider_ = std::move(provider);
+}
+
+void WebSocketServer::configureLatestOnlyQueue(std::size_t max_queued_bytes) {
+  if (running_.load()) {
+    throw std::logic_error(
+        "configureLatestOnlyQueue must be called before the server starts");
+  }
+  latest_only_queue_ = true;
+  max_queued_bytes_ = max_queued_bytes;
+}
+
+void WebSocketServer::broadcast(Payload payload) {
   removeClosedSessions();
   std::lock_guard<std::mutex> lock(sessions_mutex_);
   for (const auto& weak_session : sessions_) {
@@ -306,13 +364,30 @@ void WebSocketServer::doAccept() {
   auto socket = std::make_shared<tcp::socket>(io_service_);
   acceptor_->async_accept(*socket, [this, socket](const boost::system::error_code& ec) {
     if (!ec) {
-      std::function<void()> callback;
-      {
-        std::lock_guard<std::mutex> lock(callback_mutex_);
-        callback = client_connected_callback_;
-      }
       const auto session =
-          std::make_shared<WebSocketSession>(std::move(*socket), io_service_, binary_messages_, std::move(callback));
+          std::make_shared<WebSocketSession>(std::move(*socket), io_service_,
+                                             binary_messages_, latest_only_queue_,
+                                             max_queued_bytes_);
+      const std::weak_ptr<WebSocketSession> weak_session = session;
+      session->setAcceptedCallback([this, weak_session]() {
+        std::function<void()> callback;
+        InitialPayloadProvider provider;
+        {
+          std::lock_guard<std::mutex> lock(callback_mutex_);
+          callback = client_connected_callback_;
+          provider = initial_payload_provider_;
+        }
+        if (provider) {
+          if (const auto connected_session = weak_session.lock()) {
+            for (const auto& payload : provider()) {
+              connected_session->send(payload);
+            }
+          }
+        }
+        if (callback) {
+          callback();
+        }
+      });
       addSession(session);
       session->start();
     }
@@ -339,4 +414,3 @@ void WebSocketServer::removeClosedSessions() {
 }
 
 }  // namespace mine_slam_web
-

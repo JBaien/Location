@@ -1,0 +1,119 @@
+# ZF field configuration for the short-window local LiDAR surface.
+# Distances are metres; angles ending in _deg are degrees.
+input_topic: /points_raw
+mesh_topic: /local_tsdf_mesh/mesh
+status_topic: /local_tsdf_mesh/status
+expected_input_frame: base_link
+
+registration:
+  voxel_size: 0.20
+  min_range: 0.50
+  max_range: 30.0
+  max_points: 30000
+  min_points: 200
+  maximum_iterations: 40
+  correspondence_randomness: 10
+  max_correspondence_distance: 0.60
+  transformation_epsilon: 0.00001
+  rotation_epsilon: 0.002
+  fitness_epsilon: 0.00001
+  max_fitness_score: 0.08
+  inlier_distance: 0.30
+  min_inlier_ratio: 0.35
+  max_translation_m: 2.0
+  max_rotation_deg: 15.0
+
+  # A straight tunnel makes translation along its axis unobservable from these
+  # scans. Keep this fail-closed until a tested motion seed is available.
+  allow_unverified_bootstrap: false
+  allow_near_identity_bootstrap: false
+  safe_single_frame_fallback: true
+  minimum_bootstrap_translation_m: 0.10
+  minimum_bootstrap_rotation_deg: 0.50
+  max_prediction_translation_error_m: 0.75
+  max_prediction_rotation_error_deg: 10.0
+  failures_before_reset: 3
+
+tsdf:
+  # Direct-strip-only mode sets this false together with
+  # lateral_support/build_surface_rays=false. Keep true until bag acceptance.
+  integrate_measured_rays: true
+  # Serial construction was faster in the Tunnel-bag A/B because the two
+  # stages otherwise compete for memory bandwidth.
+  parallel_support_build: false
+  voxel_size: 0.25
+  truncation_distance: 0.75
+  min_range: 0.50
+  max_range: 10.0
+  max_weight_per_voxel_per_frame: 4.0
+  window_duration_sec: 1.50
+  max_window_frames: 15
+  max_points_per_frame: 18000
+  max_voxels: 500000
+
+  lateral_support:
+    enabled: true
+    min_range: 10.0
+    max_range: 30.0
+    max_surface_cells: 36000
+    max_candidate_samples: 300000
+    surface_spacing_voxels: 0.75
+    integration_band_voxels: 1.50
+    strong_ray_weight: 0.50
+    verified_long_ray_weight: 0.25
+    maximum_weight_per_voxel: 1.0
+    # Experimental direct strip output; no virtual TSDF rays are integrated.
+    build_surface_rays: false
+    build_indexed_mesh: true
+    max_mesh_vertices: 150000
+    max_mesh_triangles: 150000
+    # 1.76 * 0.25 m = 0.44 m, below the 0.45 m safety gate.
+    maximum_mesh_edge_voxels: 1.76
+    mesh_weld_tolerance_voxels: 0.0001
+    minimum_ring_angle_deg: 0.20
+    maximum_ring_angle_deg: 5.0
+    maximum_ring_order_direction_angle_deg: 45.0
+    minimum_match_angle_deg: 0.12
+    maximum_match_angle_deg: 0.30
+    match_step_factor: 1.50
+    minimum_gap_angle_deg: 0.35
+    maximum_gap_angle_deg: 0.65
+    gap_step_factor: 2.60
+    maximum_along_log_range_delta: 0.05
+    maximum_along_edge_base_m: 0.30
+    maximum_along_edge_range_ratio: 0.04
+    strong_cross_log_range_delta: 0.025
+    strong_cross_edge_base_m: 0.60
+    strong_cross_edge_range_ratio: 0.055
+    maximum_cross_log_range_delta: 0.25
+    maximum_cross_edge_base_m: 1.00
+    maximum_cross_edge_range_ratio: 0.25
+    maximum_cross_edge_absolute_m: 2.50
+    maximum_quad_normal_angle_deg: 25.0
+    maximum_neighbor_normal_angle_deg: 15.0
+    maximum_opposite_edge_length_ratio: 1.80
+    maximum_planarity_base_m: 0.15
+    maximum_planarity_edge_ratio: 0.08
+    maximum_neighbor_plane_edge_ratio: 0.05
+    maximum_run_cross_edge_ratio: 1.60
+    minimum_run_quads: 2
+
+mesh:
+  minimum_weight: 1.0
+  iso_level: 0.0
+  max_triangles: 200000
+  # Independent from tsdf/parallel_support_build; validated on the Tunnel bag.
+  parallel_support_validation: true
+  publish_rate_hz: 0.0
+  color_r: 0.92
+  color_g: 0.58
+  color_b: 0.16
+  color_a: 0.72
+
+sensors:
+  # lidar_id 0/1 origins in the fused base_link frame. These values follow
+  # /config/launch/lidar_static_tf.launch and must change with calibration.
+  origins_xyz: [0.0, -1.625008547, -0.026000000,
+                0.0,  1.625008547,  0.026000001]
+  require_configured_origin: true
+  require_lidar_id: true
