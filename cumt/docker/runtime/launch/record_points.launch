@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="bag_prefix" default="/data/bags/multi_lidar_points"/>
+  <arg name="split" default="true"/>
+  <arg name="duration" default="300"/>
+  <arg name="buffsize" default="2048"/>
+
+  <!-- Backward-compatible default: record the Timoo raw point cloud topics. -->
+  <include file="/config/launch/record_points_timoo.launch">
+    <arg name="bag_prefix" value="$(arg bag_prefix)"/>
+    <arg name="duration" value="$(arg duration)"/>
+    <arg name="buffsize" value="$(arg buffsize)"/>
+  </include>
+</launch>

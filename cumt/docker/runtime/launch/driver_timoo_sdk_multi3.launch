@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    CUMT: two Timoo SDK driver instances (lidar2 + lidar3).
+    These publish /lidarN/timoo_points; pair with multi_lidar_fusion_timoo_sdk.yaml.
+  -->
+
+  <group ns="lidar2">
+    <param name="cut_angle" value="-0.1" type="double" />
+    <param name="min_distance" value="0.2" type="double" />
+    <param name="max_distance" value="150.0" type="double" />
+    <param name="udp_port" value="2369" type="int" />
+    <param name="status_port" value="8604" type="int" />
+    <param name="imu_port" value="7789" type="int" />
+    <param name="use_imu_data" value="false" type="bool" />
+    <param name="fixed_points_count" value="false" type="bool" />
+    <param name="remove_invalid_points" value="true" type="bool" />
+    <param name="lidar_type" value="TIMOO16" type="str" />
+    <param name="host_ip" value="10.103.25.201" type="str" />
+    <param name="frame_id" value="lidar2" type="str" />
+    <param name="use_gps_clock" value="false" type="bool" />
+    <param name="use_tail_time" value="true" type="bool" />
+    <param name="use_sensor_timestamp" value="false" type="bool" />
+
+    <node name="timoo_ros_driver_node" pkg="timoo_ros_driver"
+          type="timoo_ros_driver_node" output="screen" />
+  </group>
+
+  <group ns="lidar3">
+    <param name="cut_angle" value="-0.1" type="double" />
+    <param name="min_distance" value="0.2" type="double" />
+    <param name="max_distance" value="150.0" type="double" />
+    <param name="udp_port" value="2370" type="int" />
+    <param name="status_port" value="8605" type="int" />
+    <param name="imu_port" value="7790" type="int" />
+    <param name="use_imu_data" value="false" type="bool" />
+    <param name="fixed_points_count" value="false" type="bool" />
+    <param name="remove_invalid_points" value="true" type="bool" />
+    <param name="lidar_type" value="TIMOO16" type="str" />
+    <param name="host_ip" value="10.103.25.201" type="str" />
+    <param name="frame_id" value="lidar3" type="str" />
+    <param name="use_gps_clock" value="false" type="bool" />
+    <param name="use_tail_time" value="true" type="bool" />
+    <param name="use_sensor_timestamp" value="false" type="bool" />
+
+    <node name="timoo_ros_driver_node" pkg="timoo_ros_driver"
+          type="timoo_ros_driver_node" output="screen" />
+  </group>
+</launch>

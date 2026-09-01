@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="bag_prefix" default="/data/bags/multi_lidar_points"/>
+  <arg name="duration" default="300"/>
+  <arg name="buffsize" default="2048"/>
+
+  <node pkg="rosbag"
+        type="record"
+        name="record_multi_lidar_points"
+        output="screen"
+        args="--buffsize=$(arg buffsize) --lz4 --split --duration=$(arg duration) -o $(arg bag_prefix) /lidar2/lidar_points /lidar3/lidar_points /points_raw /target_cloud_roi /target_measurement /target_xy /target_status /target_marker /diagnostics /tf /tf_static /rosout"/>
+</launch>

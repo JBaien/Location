@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Backward-compatible alias for the Timoo TM16 multi-LiDAR launch. -->
+  <include file="/config/launch/driver_tm16_multi3.launch"/>
+</launch>

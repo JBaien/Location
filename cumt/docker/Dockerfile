@@ -1,0 +1,89 @@
+ARG DOCKER_REGISTRY=docker.1ms.run
+ARG NODE_IMAGE_TAG=20-bookworm
+
+FROM ${DOCKER_REGISTRY}/library/node:${NODE_IMAGE_TAG} AS web_builder
+
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+
+WORKDIR /web
+COPY catkin_ws/src/mine_slam_web/web/package*.json ./
+RUN npm config set registry ${NPM_REGISTRY} \
+  && npm ci
+COPY catkin_ws/src/mine_slam_web/web/ ./
+RUN npm run build
+
+FROM ${DOCKER_REGISTRY}/library/ros:melodic-ros-base-bionic
+
+ENV DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-c"]
+
+ARG UBUNTU_APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/ubuntu
+ARG ROS_APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/ros/ubuntu
+
+RUN sed -i "s@http://archive.ubuntu.com/ubuntu@${UBUNTU_APT_MIRROR}@g; s@http://security.ubuntu.com/ubuntu@${UBUNTU_APT_MIRROR}@g" /etc/apt/sources.list \
+  && if [ -f /etc/apt/sources.list.d/ros1-latest.list ]; then \
+       sed -i "s@http://packages.ros.org/ros/ubuntu@${ROS_APT_MIRROR}@g" /etc/apt/sources.list.d/ros1-latest.list; \
+     fi \
+  && apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    iproute2 \
+    net-tools \
+    python3 \
+    python-catkin-tools \
+    python-rosdep \
+    ros-melodic-angles \
+    ros-melodic-diagnostic-updater \
+    ros-melodic-dynamic-reconfigure \
+    ros-melodic-geometry-msgs \
+    ros-melodic-message-filters \
+    ros-melodic-message-generation \
+    ros-melodic-message-runtime \
+    ros-melodic-nav-msgs \
+    ros-melodic-nodelet \
+    ros-melodic-pcl-conversions \
+    ros-melodic-pcl-ros \
+    ros-melodic-pluginlib \
+    ros-melodic-rosbag \
+    ros-melodic-roscpp \
+    ros-melodic-rosgraph-msgs \
+    ros-melodic-roslaunch \
+    ros-melodic-roslib \
+    ros-melodic-roslint \
+    ros-melodic-rospy \
+    ros-melodic-rostest \
+    ros-melodic-rosunit \
+    ros-melodic-sensor-msgs \
+    ros-melodic-std-msgs \
+    ros-melodic-tf \
+    ros-melodic-tf2-eigen \
+    ros-melodic-tf2-geometry-msgs \
+    ros-melodic-tf2-ros \
+    libboost-all-dev \
+    libeigen3-dev \
+    libpcap-dev \
+    libssl-dev \
+    libyaml-cpp-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /catkin_ws
+
+COPY catkin_ws/src/ /catkin_ws/src/
+COPY --from=web_builder /web/dist /opt/mine_slam_web/dist
+COPY docker/runtime/ /opt/mine_lidar_runtime/
+COPY docker/entrypoint.sh /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh \
+  && source /opt/ros/melodic/setup.bash \
+  && catkin_make -DCMAKE_BUILD_TYPE=Release
+
+ENV ROS_DISTRO=melodic
+ENV CATKIN_WS=/catkin_ws
+ENV MINE_RUNTIME_DIR=/config
+ENV MINE_WEB_DIST=/opt/mine_slam_web/dist
+
+EXPOSE 8080 9001 9002
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["bringup"]

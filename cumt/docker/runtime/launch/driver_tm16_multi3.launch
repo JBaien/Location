@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    CUMT: two TM16 LiDAR drivers (lidar2 + lidar3).
+    For real LiDAR UDP packets, run the container with host network mode.
+    Edit ports, IPs, frame_id and filtering here without rebuilding the image.
+    Empty device_ip disables source-IP filtering, which is the safest default
+    for a reusable multi-LiDAR deployment template.
+  -->
+
+  <group ns="lidar2">
+    <include file="$(find timoo_pointcloud)/launch/TM16.launch">
+      <arg name="device_ip" value="" />
+      <arg name="frame_id" value="lidar2" />
+      <arg name="max_range" value="150.0" />
+      <arg name="min_range" value="0.4" />
+      <arg name="hide_line" value="0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15" />
+      <arg name="left_min_angle" value="0"/>
+      <arg name="left_max_angle" value="180"/>
+      <arg name="right_min_angle" value="180"/>
+      <arg name="right_max_angle" value="360"/>
+      <arg name="pcap" value="" />
+      <arg name="port" value="3368" />
+      <arg name="status_port" value="8603" />
+      <arg name="filter_threshold" value="10,10,10,10" />
+    </include>
+  </group>
+
+  <group ns="lidar3">
+    <include file="$(find timoo_pointcloud)/launch/TM16.launch">
+      <arg name="device_ip" value="" />
+      <arg name="frame_id" value="lidar3" />
+      <arg name="max_range" value="150.0" />
+      <arg name="min_range" value="0.4" />
+      <arg name="hide_line" value="0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15" />
+      <arg name="left_min_angle" value="0"/>
+      <arg name="left_max_angle" value="180"/>
+      <arg name="right_min_angle" value="180"/>
+      <arg name="right_max_angle" value="360"/>
+      <arg name="pcap" value="" />
+      <arg name="port" value="4368" />
+      <arg name="status_port" value="9603" />
+      <arg name="filter_threshold" value="10,10,10,10" />
+    </include>
+  </group>
+</launch>
