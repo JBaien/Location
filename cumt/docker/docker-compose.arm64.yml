@@ -17,7 +17,7 @@ services:
 
     network_mode: host
     privileged: true
-    restart: unless-stopped
+    restart: always
 
     environment:
       ROS_MASTER_URI: http://127.0.0.1:11311
