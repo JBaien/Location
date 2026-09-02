@@ -29,6 +29,7 @@ load_driver_family() {
         exit
       }
     ' "${driver_config}")"
+
     if [ -n "${driver_family}" ]; then
       export MINE_DRIVER_FAMILY="${driver_family}"
     fi
@@ -57,18 +58,29 @@ serve_web() {
 
 case "${1:-bringup}" in
   bringup)
+    echo "Waiting 30 seconds for system/network initialization..."
+    sleep 30
+
+    echo "Starting mine lidar system..."
+
     load_driver_family
+
     serve_web &
     WEB_PID=$!
+
     trap 'kill ${WEB_PID} 2>/dev/null || true' EXIT
+
     roslaunch "${RUNTIME_DIR}/launch/bringup.launch" "${@:2}"
     ;;
+
   web)
     serve_web
     ;;
+
   bash|/bin/bash)
     exec /bin/bash
     ;;
+
   *)
     exec "$@"
     ;;
