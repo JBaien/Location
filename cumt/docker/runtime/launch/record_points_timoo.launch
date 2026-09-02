@@ -8,5 +8,5 @@
         type="record"
         name="record_multi_lidar_points"
         output="screen"
-        args="--buffsize=$(arg buffsize) --lz4 --split --duration=$(arg duration) -o $(arg bag_prefix) /lidar2/timoo_points /lidar3/timoo_points /points_raw /target_cloud_roi /target_measurement /target_xy /target_status /target_marker /diagnostics /tf /tf_static /rosout"/>
+        args="--buffsize=$(arg buffsize) --lz4 --split --duration=$(arg duration) -o $(arg bag_prefix) /lidar1/timoo_points /lidar2/timoo_points /lidar3/timoo_points /points_raw /target_cloud_roi /target_measurement /target_xy /target_status /target_marker /diagnostics /tf /tf_static /rosout"/>
 </launch>
