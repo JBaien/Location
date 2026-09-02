@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <launch>
   <!--
-    CUMT 两雷达静态外参配置，Docker 部署后可直接修改本挂载文件。
+    CUMT 三雷达静态外参配置。
 
     参数顺序（tf2_ros/static_transform_publisher）：
       x y z yaw pitch roll parent_frame child_frame
@@ -11,23 +11,24 @@
 
     TF 树：
       base_link -> lidar2
+      lidar2    -> lidar1
       lidar2    -> lidar3
 
     base_link 为水平坐标系（Z 向上），原点暂放 lidar2。
-    lidar2 相对水平面俯仰约 24.62°（0.4296 rad），由 base_link->lidar2 吸收。
-    lidar2->lidar3 为两台雷达之间的实际标定结果，请在现场用
-      rosrun tf tf_echo base_link lidar2
-      rosrun tf tf_echo base_link lidar3
-      rosrun tf view_frames
-    验证后再投入使用。
-
-    注意：lidar2->lidar3 的 Y=27.175900 如果单位是米，两雷达相距约 27 m，
-    与同设备安装的量级不符，务必确认是否应为 0.271759 / 2.717590 之类。
+    base_link->lidar2 吸收 lidar2 约 24.62° 的安装俯仰。
+    lidar2->lidar3 使用当前最新两雷达标定结果。
+    lidar2->lidar1 由原现场 lidar1->lidar2 标定外参取逆得到。
   -->
+
   <node pkg="tf2_ros"
         type="static_transform_publisher"
         name="base_link_to_lidar2"
         args="0 0 0 0 0.4296 0 base_link lidar2" />
+
+  <node pkg="tf2_ros"
+        type="static_transform_publisher"
+        name="lidar2_to_lidar1"
+        args="-0.821906788 -2.212231178 -0.291338761 -1.603675518 -0.003970140 0.232085245 lidar2 lidar1" />
 
   <node pkg="tf2_ros"
         type="static_transform_publisher"
